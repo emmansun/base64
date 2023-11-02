@@ -42,10 +42,13 @@ func decode(enc *Encoding, dst, src []byte) (int, error) {
 			// decoded by SIMD
 			remain = srcLen - remain
 			src = src[remain:]
-			remain = (remain / 4) * 3
-			dst = dst[remain:]
+			dstStart := (remain / 4) * 3
+			dst = dst[dstStart:]
 			n, err := decodeGeneric(enc, dst, src)
-			return n + remain, err
+			if cerr, ok := err.(CorruptInputError); ok {
+				return n + dstStart, CorruptInputError(int(cerr) + remain)
+			}
+			return n + dstStart, err
 		}
 	}
 	return decodeGeneric(enc, dst, src)
