@@ -1,4 +1,6 @@
 # base64
+English | [简体中文](README-CN.md)
+
 Base64 with SIMD acceleration
 
 [![ci](https://github.com/emmansun/base64/actions/workflows/ci.yml/badge.svg)](https://github.com/emmansun/base64/actions/workflows/ci.yml)
