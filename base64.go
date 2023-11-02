@@ -68,8 +68,6 @@ func NewEncoding(encoder string) *Encoding {
 		e.lut = &encodeURLLut
 	} else if encoder == encodeStd {
 		e.lut = &encodeStdLut
-	} else {
-		panic("we just support std/url encoder now")
 	}
 	return e
 }
@@ -127,24 +125,8 @@ var RawURLEncoding = URLEncoding.WithPadding(NoPadding)
  * Encoder
  */
 
-// Encode encodes src using the encoding enc, writing
-// EncodedLen(len(src)) bytes to dst.
-//
-// The encoding pads the output to a multiple of 4 bytes,
-// so Encode is not appropriate for use on individual blocks
-// of a large data stream. Use NewEncoder() instead.
-func (enc *Encoding) Encode(dst, src []byte) {
-	if len(src) == 0 {
-		return
-	}
-	// use SIMD if possible
-	encoded := encodeSIMD(dst, src, enc.lut)
-	if encoded > 0 {
-		src = src[(encoded/4)*3:]
-		dst = dst[encoded:]
-	}
-
-	// enc is a pointer receiver, so the use of enc.encode within the hot
+ func encodeGeneric(enc *Encoding, dst, src []byte) {
+		// enc is a pointer receiver, so the use of enc.encode within the hot
 	// loop below means a nil check at every operation. Lift that nil check
 	// outside of the loop to speed up the encoder.
 	_ = enc.encode
@@ -189,6 +171,18 @@ func (enc *Encoding) Encode(dst, src []byte) {
 			dst[di+3] = byte(enc.padChar)
 		}
 	}
+ }
+// Encode encodes src using the encoding enc, writing
+// EncodedLen(len(src)) bytes to dst.
+//
+// The encoding pads the output to a multiple of 4 bytes,
+// so Encode is not appropriate for use on individual blocks
+// of a large data stream. Use NewEncoder() instead.
+func (enc *Encoding) Encode(dst, src []byte) {
+	if len(src) == 0 {
+		return
+	}
+	encode(enc, dst, src)
 }
 
 // EncodeToString returns the base64 encoding of src.
@@ -481,16 +475,7 @@ func (d *decoder) Read(p []byte) (n int, err error) {
 	return n, d.err
 }
 
-// Decode decodes src using the encoding enc. It writes at most
-// DecodedLen(len(src)) bytes to dst and returns the number of bytes
-// written. If src contains invalid base64 data, it will return the
-// number of bytes successfully written and CorruptInputError.
-// New line characters (\r and \n) are ignored.
-func (enc *Encoding) Decode(dst, src []byte) (n int, err error) {
-	if len(src) == 0 {
-		return 0, nil
-	}
-
+func decodeGeneric(enc *Encoding, dst, src []byte) (n int, err error) {
 	// Lift the nil check outside of the loop. enc.decodeMap is directly
 	// used later in this function, to let the compiler know that the
 	// receiver can't be nil.
@@ -552,6 +537,18 @@ func (enc *Encoding) Decode(dst, src []byte) (n int, err error) {
 		}
 	}
 	return n, err
+}
+
+// Decode decodes src using the encoding enc. It writes at most
+// DecodedLen(len(src)) bytes to dst and returns the number of bytes
+// written. If src contains invalid base64 data, it will return the
+// number of bytes successfully written and CorruptInputError.
+// New line characters (\r and \n) are ignored.
+func (enc *Encoding) Decode(dst, src []byte) (int, error) {
+	if len(src) == 0 {
+		return 0, nil
+	}
+	return decode(enc, dst, src)
 }
 
 // assemble32 assembles 4 base64 digits into 3 bytes.

@@ -3,6 +3,10 @@
 
 package base64
 
-func encodeSIMD(dst, src []byte, lut *[16]byte) int {
-	return 0
+func encode(enc *Encoding, dst, src []byte) {
+	encodeGeneric(enc, dst, src)
+}
+
+func decode(enc *Encoding, dst, src []byte) (int, error) {
+	return decodeGeneric(enc, dst, src)
 }

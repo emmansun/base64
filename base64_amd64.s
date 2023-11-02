@@ -35,6 +35,55 @@ DATA range_1_end<>+0x00(SB)/8, $0x3333333333333333
 DATA range_1_end<>+0x08(SB)/8, $0x3333333333333333
 GLOBL range_1_end<>(SB), 8, $16
 
+// below constants for std decode
+// nibble mask
+DATA nibble_mask<>+0x00(SB)/8, $0x2F2F2F2F2F2F2F2F
+DATA nibble_mask<>+0x08(SB)/8, $0x2F2F2F2F2F2F2F2F
+GLOBL nibble_mask<>(SB), 8, $16
+
+DATA stddec_lut_hi<>+0x00(SB)/8, $0x0804080402011010
+DATA stddec_lut_hi<>+0x08(SB)/8, $0x1010101010101010
+GLOBL stddec_lut_hi<>(SB), 8, $16
+
+DATA stddec_lut_lo<>+0x00(SB)/8, $0x1111111111111115
+DATA stddec_lut_lo<>+0x08(SB)/8, $0x1A1B1B1B1A131111
+GLOBL stddec_lut_lo<>(SB), 8, $16
+
+DATA stddec_lut_roll<>+0x00(SB)/8, $0xB9B9BFBF04131000
+DATA stddec_lut_roll<>+0x08(SB)/8, $0x0000000000000000
+GLOBL stddec_lut_roll<>(SB), 8, $16
+
+// below constants for url decode
+DATA urldec_lut_hi<>+0x00(SB)/8, $0x2804080402011010
+DATA urldec_lut_hi<>+0x08(SB)/8, $0x1010101010101010
+GLOBL urldec_lut_hi<>(SB), 8, $16
+
+DATA urldec_lut_lo<>+0x00(SB)/8, $0x1111111111111115
+DATA urldec_lut_lo<>+0x08(SB)/8, $0x331B1A1B1B131111
+GLOBL urldec_lut_lo<>(SB), 8, $16
+
+DATA urldec_lut_roll<>+0x00(SB)/8, $0xB9E0BFBF04110000
+DATA urldec_lut_roll<>+0x08(SB)/8, $0x00000000000000B9
+GLOBL urldec_lut_roll<>(SB), 8, $16
+
+// 0x5E mask
+DATA url_5e_mask<>+0x00(SB)/8, $0x5E5E5E5E5E5E5E5E
+DATA url_5e_mask<>+0x08(SB)/8, $0x5E5E5E5E5E5E5E5E
+GLOBL url_5e_mask<>(SB), 8, $16
+
+// below for decode reshuffle
+DATA dec_reshuffle_const0<>+0x00(SB)/8, $0x0140014001400140
+DATA dec_reshuffle_const0<>+0x08(SB)/8, $0x0140014001400140
+GLOBL dec_reshuffle_const0<>(SB), 8, $16
+
+DATA dec_reshuffle_const1<>+0x00(SB)/8, $0x0001100000011000
+DATA dec_reshuffle_const1<>+0x08(SB)/8, $0x0001100000011000
+GLOBL dec_reshuffle_const1<>(SB), 8, $16
+
+DATA dec_reshuffle_const2<>+0x00(SB)/8, $0x090A040506000102
+DATA dec_reshuffle_const2<>+0x08(SB)/8, $0xFFFFFFFF0C0D0E08
+GLOBL dec_reshuffle_const2<>(SB), 8, $16
+
 // Requires SSSE3
 #define SSE_ENC(in_out, lut, tmp1, tmp2) \
 	\ // enc reshuffle
@@ -69,6 +118,11 @@ GLOBL range_1_end<>(SB), 8, $16
 	VPSUBB tmp2, tmp1, tmp1;                       \
 	VPSHUFB tmp1, lut, tmp1;                       \
 	VPADDB tmp1, in_out, in_out
+
+#define SSE_RESHUFFLE(in_out) \
+	PMADDUBSW dec_reshuffle_const0<>(SB), in_out;  \
+	PMADDWL dec_reshuffle_const1<>(SB), in_out;    \
+	PSHUFB dec_reshuffle_const2<>(SB), in_out
 
 //func encodeSIMD(dst, src []byte, lut *[16]byte) int
 TEXT ·encodeSIMD(SB),NOSPLIT,$0
@@ -205,4 +259,104 @@ avx2_one:
 avx2_done:
 	MOVQ SI, ret+56(FP)
 	VZEROUPPER
+	RET
+
+//func decodeStdSIMD(dst, src []byte) int
+TEXT ·decodeStdSIMD(SB),NOSPLIT,$0
+	MOVQ dst_base+0(FP), AX
+	MOVQ src_base+24(FP), BX
+	MOVQ src_len+32(FP), CX
+
+loop:
+	CMPQ CX, $24
+	JB done
+
+	MOVOU (BX), X0
+	MOVOU X0, X1
+	MOVOU X0, X2
+
+	PSRLL $4, X1
+	PAND nibble_mask<>(SB), X1 // hi_nibbles
+	PAND nibble_mask<>(SB), X2 // lo_nibbles
+	MOVOU stddec_lut_hi<>(SB), X10 // lut_hi
+	PSHUFB X1, X10  // hi
+	MOVOU stddec_lut_lo<>(SB), X11 // lut_lo
+	PSHUFB X2, X11 // lo
+
+	// validate
+	PAND X11, X10 // hi & lo
+	PXOR X12, X12
+	PCMPGTB X12, X10 // compare with zero
+	PMOVMSKB X10, SI // mm_movemask_epi8
+	CMPQ SI, $0
+	JNE done
+
+	// translate
+	MOVOU nibble_mask<>(SB), X2
+	PCMPEQB X0, X2 // compare nibble mask with in
+	PADDB X2, X1 // add eq_2F with hi_nibbles
+	MOVOU stddec_lut_roll<>(SB), X2
+	PSHUFB X1, X2 // shuffle lut roll
+	PADDB X2, X0 // Now simply add the delta values to the input
+
+	SSE_RESHUFFLE(X0)
+	MOVOU X0, (AX)
+
+	SUBQ $16, CX
+	LEAQ 12(AX), AX
+	LEAQ 16(BX), BX
+	JMP loop
+
+done:
+	MOVQ CX, ret+48(FP)
+	RET
+
+//func decodeUrlSIMD(dst, src []byte) int
+TEXT ·decodeUrlSIMD(SB),NOSPLIT,$0
+	MOVQ dst_base+0(FP), AX
+	MOVQ src_base+24(FP), BX
+	MOVQ src_len+32(FP), CX
+
+loop:
+	CMPQ CX, $24
+	JB done
+
+	MOVOU (BX), X0
+	MOVOU X0, X1
+	MOVOU X0, X2
+
+	PSRLL $4, X1
+	PAND nibble_mask<>(SB), X1 // hi_nibbles
+	PAND nibble_mask<>(SB), X2 // lo_nibbles
+	MOVOU urldec_lut_hi<>(SB), X10 // lut_hi
+	PSHUFB X1, X10  // hi
+	MOVOU urldec_lut_lo<>(SB), X11 // lut_lo
+	PSHUFB X2, X11 // lo
+
+	// validate
+	PAND X11, X10 // hi & lo
+	PXOR X12, X12
+	PCMPGTB X12, X10 // compare with zero
+	PMOVMSKB X10, SI // mm_movemask_epi8
+	CMPQ SI, $0
+	JNE done
+
+	// translate
+	MOVOU X0, X2
+	PCMPGTB url_5e_mask<>(SB), X2 // compare 0x5E mask with in
+	PSUBB X2, X1 // sub gt_5E with hi_nibbles
+	MOVOU urldec_lut_roll<>(SB), X2
+	PSHUFB X1, X2 // shuffle lut roll
+	PADDB X2, X0 // Now simply add the delta values to the input
+
+	SSE_RESHUFFLE(X0)
+	MOVOU X0, (AX)
+
+	SUBQ $16, CX
+	LEAQ 12(AX), AX
+	LEAQ 16(BX), BX
+	JMP loop
+
+done:
+	MOVQ CX, ret+48(FP)
 	RET
