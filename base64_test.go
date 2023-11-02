@@ -307,6 +307,14 @@ func TestDecodedLen(t *testing.T) {
 }
 
 func TestBig(t *testing.T) {
+	testBig(t, StdEncoding)
+}
+
+func TestBigWithURLEncoding(t *testing.T) {
+	testBig(t, URLEncoding)
+}
+
+func testBig(t *testing.T, encoding *Encoding) {
 	n := 3*1000 + 1
 	raw := make([]byte, n)
 	const alpha = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -314,7 +322,7 @@ func TestBig(t *testing.T) {
 		raw[i] = alpha[i%len(alpha)]
 	}
 	encoded := new(bytes.Buffer)
-	w := NewEncoder(StdEncoding, encoded)
+	w := NewEncoder(encoding, encoded)
 	nn, err := w.Write(raw)
 	if nn != n || err != nil {
 		t.Fatalf("Encoder.Write(raw) = %d, %v want %d, nil", nn, err, n)
@@ -323,7 +331,7 @@ func TestBig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encoder.Close() = %v want nil", err)
 	}
-	decoded, err := io.ReadAll(NewDecoder(StdEncoding, encoded))
+	decoded, err := io.ReadAll(NewDecoder(encoding, encoded))
 	if err != nil {
 		t.Fatalf("io.ReadAll(NewDecoder(...)): %v", err)
 	}
