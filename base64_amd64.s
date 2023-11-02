@@ -9,80 +9,80 @@
 // shuffle byte order for input 12 butes
 DATA reshuffle_mask<>+0x00(SB)/8, $0x0405030401020001
 DATA reshuffle_mask<>+0x08(SB)/8, $0x0a0b090a07080607
-GLOBL reshuffle_mask<>(SB), 8, $16
+GLOBL reshuffle_mask<>(SB), (NOPTR+RODATA), $16
 
 DATA mulhi_mask<>+0x00(SB)/8, $0x0FC0FC000FC0FC00
 DATA mulhi_mask<>+0x08(SB)/8, $0x0FC0FC000FC0FC00
-GLOBL mulhi_mask<>(SB), 8, $16
+GLOBL mulhi_mask<>(SB), (NOPTR+RODATA), $16
 
 DATA mulhi_const<>+0x00(SB)/8, $0x0400004004000040
 DATA mulhi_const<>+0x08(SB)/8, $0x0400004004000040
-GLOBL mulhi_const<>(SB), 8, $16
+GLOBL mulhi_const<>(SB), (NOPTR+RODATA), $16
 
 DATA mullo_mask<>+0x00(SB)/8, $0x003F03F0003F03F0
 DATA mullo_mask<>+0x08(SB)/8, $0x003F03F0003F03F0
-GLOBL mullo_mask<>(SB), 8, $16
+GLOBL mullo_mask<>(SB), (NOPTR+RODATA), $16
 
 DATA mullo_const<>+0x00(SB)/8, $0x0100001001000010
 DATA mullo_const<>+0x08(SB)/8, $0x0100001001000010
-GLOBL mullo_const<>(SB), 8, $16
+GLOBL mullo_const<>(SB), (NOPTR+RODATA), $16
 
 DATA range_0_end<>+0x00(SB)/8, $0x1919191919191919
 DATA range_0_end<>+0x08(SB)/8, $0x1919191919191919
-GLOBL range_0_end<>(SB), 8, $16
+GLOBL range_0_end<>(SB), (NOPTR+RODATA), $16
 
 DATA range_1_end<>+0x00(SB)/8, $0x3333333333333333
 DATA range_1_end<>+0x08(SB)/8, $0x3333333333333333
-GLOBL range_1_end<>(SB), 8, $16
+GLOBL range_1_end<>(SB), (NOPTR+RODATA), $16
 
 // below constants for std decode
 // nibble mask
 DATA nibble_mask<>+0x00(SB)/8, $0x2F2F2F2F2F2F2F2F
 DATA nibble_mask<>+0x08(SB)/8, $0x2F2F2F2F2F2F2F2F
-GLOBL nibble_mask<>(SB), 8, $16
+GLOBL nibble_mask<>(SB), (NOPTR+RODATA), $16
 
 DATA stddec_lut_hi<>+0x00(SB)/8, $0x0804080402011010
 DATA stddec_lut_hi<>+0x08(SB)/8, $0x1010101010101010
-GLOBL stddec_lut_hi<>(SB), 8, $16
+GLOBL stddec_lut_hi<>(SB), (NOPTR+RODATA), $16
 
 DATA stddec_lut_lo<>+0x00(SB)/8, $0x1111111111111115
 DATA stddec_lut_lo<>+0x08(SB)/8, $0x1A1B1B1B1A131111
-GLOBL stddec_lut_lo<>(SB), 8, $16
+GLOBL stddec_lut_lo<>(SB), (NOPTR+RODATA), $16
 
 DATA stddec_lut_roll<>+0x00(SB)/8, $0xB9B9BFBF04131000
 DATA stddec_lut_roll<>+0x08(SB)/8, $0x0000000000000000
-GLOBL stddec_lut_roll<>(SB), 8, $16
+GLOBL stddec_lut_roll<>(SB), (NOPTR+RODATA), $16
 
 // below constants for url decode
 DATA urldec_lut_hi<>+0x00(SB)/8, $0x2804080402011010
 DATA urldec_lut_hi<>+0x08(SB)/8, $0x1010101010101010
-GLOBL urldec_lut_hi<>(SB), 8, $16
+GLOBL urldec_lut_hi<>(SB), (NOPTR+RODATA), $16
 
 DATA urldec_lut_lo<>+0x00(SB)/8, $0x1111111111111115
 DATA urldec_lut_lo<>+0x08(SB)/8, $0x331B1A1B1B131111
-GLOBL urldec_lut_lo<>(SB), 8, $16
+GLOBL urldec_lut_lo<>(SB), (NOPTR+RODATA), $16
 
 DATA urldec_lut_roll<>+0x00(SB)/8, $0xB9E0BFBF04110000
 DATA urldec_lut_roll<>+0x08(SB)/8, $0x00000000000000B9
-GLOBL urldec_lut_roll<>(SB), 8, $16
+GLOBL urldec_lut_roll<>(SB), (NOPTR+RODATA), $16
 
 // 0x5E mask
 DATA url_5e_mask<>+0x00(SB)/8, $0x5E5E5E5E5E5E5E5E
 DATA url_5e_mask<>+0x08(SB)/8, $0x5E5E5E5E5E5E5E5E
-GLOBL url_5e_mask<>(SB), 8, $16
+GLOBL url_5e_mask<>(SB), (NOPTR+RODATA), $16
 
 // below for decode reshuffle
 DATA dec_reshuffle_const0<>+0x00(SB)/8, $0x0140014001400140
 DATA dec_reshuffle_const0<>+0x08(SB)/8, $0x0140014001400140
-GLOBL dec_reshuffle_const0<>(SB), 8, $16
+GLOBL dec_reshuffle_const0<>(SB), (NOPTR+RODATA), $16
 
 DATA dec_reshuffle_const1<>+0x00(SB)/8, $0x0001100000011000
 DATA dec_reshuffle_const1<>+0x08(SB)/8, $0x0001100000011000
-GLOBL dec_reshuffle_const1<>(SB), 8, $16
+GLOBL dec_reshuffle_const1<>(SB), (NOPTR+RODATA), $16
 
 DATA dec_reshuffle_const2<>+0x00(SB)/8, $0x090A040506000102
 DATA dec_reshuffle_const2<>+0x08(SB)/8, $0xFFFFFFFF0C0D0E08
-GLOBL dec_reshuffle_const2<>(SB), 8, $16
+GLOBL dec_reshuffle_const2<>(SB), (NOPTR+RODATA), $16
 
 // Requires SSSE3
 #define SSE_ENC(in_out, lut, tmp1, tmp2) \
