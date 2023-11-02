@@ -7,6 +7,6 @@ Base64 with SIMD acceleration
 ![GitHub go.mod Go version (branch)](https://img.shields.io/github/go-mod/go-version/emmansun/base64)
 
 ## Acknowledgements
-The basic architecture, design and some codes are from [golang base64](https://github.com/golang/go/tree/master/src/encoding/base64).
+This is an extension of [golang base64](https://github.com/golang/go/tree/master/src/encoding/base64).
 
 The amd64 SIMD implementation (especially SSE version) is inspired by code from [aklomp/base64](https://github.com/aklomp/base64). 
