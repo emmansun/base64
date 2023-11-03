@@ -28,3 +28,23 @@ func TestStdEncodeSIMD(t *testing.T) {
 
 	}
 }
+
+func TestStdDecodeSIMD(t *testing.T) {
+	pairs := []testpair{
+		{"abcdefghijklabcdefghijklabcdefghijklabcdefghijkl", "YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts"},
+		{"abcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijkl", "YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts"},
+	}
+	for _, p := range pairs {
+		expected := []byte(p.decoded)
+		src := []byte(p.encoded)
+		dst := make([]byte, len(expected))
+
+		ret := decodeAsm(dst, src, &dencodeStdLut)
+		if ret == len(src) {
+			t.Fatal("should return decode")
+		}
+		if !bytes.Equal(dst, expected) {
+			t.Fatalf("got %x, expected %x", dst, expected)
+		}
+	}
+}
