@@ -53,3 +53,32 @@ loop:
 done:
 	MOVD R5, ret+56(FP)
 	RET
+
+//func decodeAsm(dst, src []byte, lut *[128]byte) int
+TEXT ·decodeAsm(SB),NOSPLIT,$0
+	MOVD dst_base+0(FP), R0
+	MOVD src_base+24(FP), R1
+	MOVD src_len+32(FP), R2
+	MOVD lut+48(FP), R3
+
+	VLD1.P 64(R3), [V8.B16, V9.B16, V10.B16, V11.B16]
+	VLD1 (R3), [V12.B16, V13.B16, V14.B16, V15.B16]
+	MOVD $0x63, R4
+	VDUP R4, V7.B16
+
+loop:
+	CMP $64, R2
+	BLT done
+
+	VLD4.P 64(R1), [V0.B16, V1.B16, V2.B16, V3.B16]
+	VUQSUB V7.B16, V0.B16, V16.B16
+	VUQSUB V7.B16, V1.B16, V17.B16
+	VUQSUB V7.B16, V2.B16, V18.B16
+	VUQSUB V7.B16, V3.B16, V19.B16
+
+	SUB $64, R2
+	B loop
+
+done:
+	MOVD R2, ret+56(FP)
+	RET
