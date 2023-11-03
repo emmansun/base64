@@ -129,6 +129,11 @@ GLOBL dec_reshuffle_const2<>(SB), (NOPTR+RODATA), $16
 	VPMADDWD dec_reshuffle_const1<>(SB), in_out, in_out;    \
 	VPSHUFB dec_reshuffle_const2<>(SB), in_out, in_out
 
+#define AVX2_RESHUFFLE(in_out, mask0, mask1, mask2) \
+	VPMADDUBSW mask0, in_out, in_out;  \
+	VPMADDWD mask1, in_out, in_out;    \
+	VPSHUFB mask2, in_out, in_out
+
 //func encodeSIMD(dst, src []byte, lut *[16]byte) int
 TEXT ·encodeSIMD(SB),NOSPLIT,$0
 	MOVQ dst_base+0(FP), AX
@@ -272,6 +277,9 @@ TEXT ·decodeStdSIMD(SB),NOSPLIT,$0
 	MOVQ src_base+24(FP), BX
 	MOVQ src_len+32(FP), CX
 
+	CMPB ·useAVX2(SB), $1
+	JE   avx2
+
 	CMPB ·useAVX(SB), $1
 	JE   avx
 
@@ -286,15 +294,15 @@ loop:
 	MOVOU X0, X2
 
 	PSRLL $4, X1
-	PAND nibble_mask<>(SB), X1 // hi_nibbles
-	PAND nibble_mask<>(SB), X2 // lo_nibbles
+	PAND nibble_mask<>(SB), X1     // hi_nibbles
+	PAND nibble_mask<>(SB), X2     // lo_nibbles
 	MOVOU stddec_lut_hi<>(SB), X10 // lut_hi
-	PSHUFB X1, X10  // hi
+	PSHUFB X1, X10                 // hi
 	MOVOU stddec_lut_lo<>(SB), X11 // lut_lo
-	PSHUFB X2, X11 // lo
+	PSHUFB X2, X11                 // lo
 
 	// validate
-	PAND X11, X10 // hi & lo
+	PAND X11, X10    // hi & lo
 	PCMPGTB X12, X10 // compare with zero
 	PMOVMSKB X10, SI // mm_movemask_epi8
 	CMPQ SI, $0
@@ -302,11 +310,11 @@ loop:
 
 	// translate
 	MOVOU nibble_mask<>(SB), X2
-	PCMPEQB X0, X2 // compare nibble mask with in
-	PADDB X2, X1 // add eq_2F with hi_nibbles
+	PCMPEQB X0, X2                  // compare nibble mask with in
+	PADDB X2, X1                    // add eq_2F with hi_nibbles
 	MOVOU stddec_lut_roll<>(SB), X2
-	PSHUFB X1, X2 // shuffle lut roll
-	PADDB X2, X0 // Now simply add the delta values to the input
+	PSHUFB X1, X2                   // shuffle lut roll
+	PADDB X2, X0                    // Now simply add the delta values to the input
 
 	SSE_RESHUFFLE(X0)
 	MOVOU X0, (AX)
@@ -335,11 +343,11 @@ avx_loop:
 	VPSRLD $4, X0, X1
 	VPAND nibble_mask<>(SB), X1, X1 // hi_nibbles
 	VPAND nibble_mask<>(SB), X0, X2 // lo_nibbles
-	VPSHUFB X1, X10, X3 // hi
-	VPSHUFB X2, X11, X4 // lo
+	VPSHUFB X1, X10, X3             // hi
+	VPSHUFB X2, X11, X4             // lo
 
 	// validate
-	VPAND X4, X3, X3 // hi & lo
+	VPAND X4, X3, X3     // hi & lo
 	VPCMPGTB X12, X3, X3 // compare with zero
 	VPMOVMSKB X3, SI
 	CMPQ SI, $0
@@ -347,9 +355,9 @@ avx_loop:
 
 	// translate
 	VPCMPEQB nibble_mask<>(SB), X0, X2 // compare nibble mask with in
-	VPADDB X2, X1, X1 // add eq_2F with hi_nibbles
-	VPSHUFB X1, X13, X2 // shuffle lut roll
-	VPADDB X2, X0, X0 // Now simply add the delta values to the input
+	VPADDB X2, X1, X1                  // add eq_2F with hi_nibbles
+	VPSHUFB X1, X13, X2                // shuffle lut roll
+	VPADDB X2, X0, X0                  // Now simply add the delta values to the input
 
 	AVX_RESHUFFLE(X0)
 	VMOVDQU X0, (AX)
@@ -363,11 +371,84 @@ avx_done:
 	MOVQ CX, ret+48(FP)
 	RET
 
+avx2:
+	VBROADCASTI128 nibble_mask<>(SB), Y9
+	VBROADCASTI128 stddec_lut_hi<>(SB), Y10   // lut_hi
+	VBROADCASTI128 stddec_lut_lo<>(SB), Y11   // lut_lo
+	VBROADCASTI128 stddec_lut_roll<>(SB), Y12 // lut_lo
+	VBROADCASTI128 dec_reshuffle_const0<>(SB), Y6
+	VBROADCASTI128 dec_reshuffle_const1<>(SB), Y7
+	VBROADCASTI128 dec_reshuffle_const2<>(SB), Y8
+
+avx2_loop:
+	CMPQ CX, $40
+	JB avx2_one
+	
+	VMOVDQU (BX), Y0
+	VPSRLD $4, Y0, Y1
+	VPAND Y9, Y1, Y1    // hi_nibbles
+	VPAND Y9, Y0, Y2    // lo_nibbles
+	VPSHUFB Y1, Y10, Y3 // hi
+	VPSHUFB Y2, Y11, Y4 // lo
+
+	// validate
+	VPTEST Y3, Y4
+	JNZ avx2_done
+
+	// translate
+	VPCMPEQB Y9, Y0, Y2 // compare nibble mask with in
+	VPADDB Y2, Y1, Y1   // add eq_2F with hi_nibbles
+	VPSHUFB Y1, Y12, Y2 // shuffle lut roll
+	VPADDB Y2, Y0, Y0   // Now simply add the delta values to the input
+
+	AVX2_RESHUFFLE(Y0, Y6, Y7, Y8)
+	VEXTRACTI128 $1, Y0, X1
+	VMOVDQU X0, (AX)
+	VMOVDQU X1, 12(AX)
+	
+	SUBQ $32, CX
+	LEAQ 24(AX), AX
+	LEAQ 32(BX), BX
+	JMP avx2_loop
+
+avx2_one:
+	CMPQ CX, $24
+	JB avx2_done
+
+	VMOVDQU (BX), X0
+	VPSRLD $4, X0, X1
+	VPAND X9, X1, X1    // hi_nibbles
+	VPAND X9, X0, X2    // lo_nibbles
+	VPSHUFB X1, X10, X3 // hi
+	VPSHUFB X2, X11, X4 // lo
+
+	// validate
+	VPTEST X3, X4
+	JNZ avx2_done
+
+	// translate
+	VPCMPEQB X9, X0, X2 // compare nibble mask with in
+	VPADDB X2, X1, X1   // add eq_2F with hi_nibbles
+	VPSHUFB X1, X12, X2 // shuffle lut roll
+	VPADDB X2, X0, X0   // Now simply add the delta values to the input
+
+	AVX2_RESHUFFLE(X0, X6, X7, X8)
+	VMOVDQU X0, (AX)
+	SUBQ $16, CX
+
+avx2_done:
+	MOVQ CX, ret+48(FP)
+	VZEROUPPER
+	RET
+
 //func decodeUrlSIMD(dst, src []byte) int
 TEXT ·decodeUrlSIMD(SB),NOSPLIT,$0
 	MOVQ dst_base+0(FP), AX
 	MOVQ src_base+24(FP), BX
 	MOVQ src_len+32(FP), CX
+
+	CMPB ·useAVX2(SB), $1
+	JE   avx2
 
 	CMPB ·useAVX(SB), $1
 	JE   avx
@@ -383,15 +464,15 @@ loop:
 	MOVOU X0, X2
 
 	PSRLL $4, X1
-	PAND nibble_mask<>(SB), X1 // hi_nibbles
-	PAND nibble_mask<>(SB), X2 // lo_nibbles
+	PAND nibble_mask<>(SB), X1     // hi_nibbles
+	PAND nibble_mask<>(SB), X2     // lo_nibbles
 	MOVOU urldec_lut_hi<>(SB), X10 // lut_hi
-	PSHUFB X1, X10  // hi
+	PSHUFB X1, X10                 // hi
 	MOVOU urldec_lut_lo<>(SB), X11 // lut_lo
-	PSHUFB X2, X11 // lo
+	PSHUFB X2, X11                 // lo
 
 	// validate
-	PAND X11, X10 // hi & lo
+	PAND X11, X10    // hi & lo
 	PCMPGTB X12, X10 // compare with zero
 	PMOVMSKB X10, SI // mm_movemask_epi8
 	CMPQ SI, $0
@@ -400,10 +481,10 @@ loop:
 	// translate
 	MOVOU X0, X2
 	PCMPGTB url_5e_mask<>(SB), X2 // compare 0x5E mask with in
-	PSUBB X2, X1 // sub gt_5E with hi_nibbles
+	PSUBB X2, X1                  // sub gt_5E with hi_nibbles
 	MOVOU urldec_lut_roll<>(SB), X2
-	PSHUFB X1, X2 // shuffle lut roll
-	PADDB X2, X0 // Now simply add the delta values to the input
+	PSHUFB X1, X2                 // shuffle lut roll
+	PADDB X2, X0                  // Now simply add the delta values to the input
 
 	SSE_RESHUFFLE(X0)
 	MOVOU X0, (AX)
@@ -432,11 +513,11 @@ avx_loop:
 	VPSRLD $4, X0, X1
 	VPAND nibble_mask<>(SB), X1, X1 // hi_nibbles
 	VPAND nibble_mask<>(SB), X0, X2 // lo_nibbles
-	VPSHUFB X1, X10, X3 // hi
-	VPSHUFB X2, X11, X4 // lo
+	VPSHUFB X1, X10, X3             // hi
+	VPSHUFB X2, X11, X4             // lo
 
 	// validate
-	VPAND X4, X3, X3 // hi & lo
+	VPAND X4, X3, X3     // hi & lo
 	VPCMPGTB X12, X3, X3 // compare with zero
 	VPMOVMSKB X3, SI
 	CMPQ SI, $0
@@ -444,9 +525,9 @@ avx_loop:
 
 	// translate
 	VPCMPGTB url_5e_mask<>(SB), X0, X2 // compare 0x5E mask with in
-	VPSUBB X2, X1, X1
-	VPSHUFB X1, X13, X2 // shuffle lut roll
-	VPADDB X2, X0, X0 // Now simply add the delta values to the input
+	VPSUBB X2, X1, X1                  // sub gt_5E with hi_nibbles
+	VPSHUFB X1, X13, X2                // shuffle lut roll
+	VPADDB X2, X0, X0                  // Now simply add the delta values to the input
 
 	AVX_RESHUFFLE(X0)
 	VMOVDQU X0, (AX)
@@ -458,4 +539,75 @@ avx_loop:
 
 avx_done:
 	MOVQ CX, ret+48(FP)
+	RET
+
+avx2:
+	VBROADCASTI128 nibble_mask<>(SB), Y9
+	VBROADCASTI128 urldec_lut_hi<>(SB), Y10   // lut_hi
+	VBROADCASTI128 urldec_lut_lo<>(SB), Y11   // lut_lo
+	VBROADCASTI128 urldec_lut_roll<>(SB), Y12 // lut_lo
+	VBROADCASTI128 dec_reshuffle_const0<>(SB), Y6
+	VBROADCASTI128 dec_reshuffle_const1<>(SB), Y7
+	VBROADCASTI128 dec_reshuffle_const2<>(SB), Y8
+	VBROADCASTI128 url_5e_mask<>(SB), Y13
+
+avx2_loop:
+	CMPQ CX, $40
+	JB avx2_one
+	
+	VMOVDQU (BX), Y0
+	VPSRLD $4, Y0, Y1
+	VPAND Y9, Y1, Y1    // hi_nibbles
+	VPAND Y9, Y0, Y2    // lo_nibbles
+	VPSHUFB Y1, Y10, Y3 // hi
+	VPSHUFB Y2, Y11, Y4 // lo
+
+	// validate
+	VPTEST Y3, Y4
+	JNZ avx2_done
+
+	// translate
+	VPCMPGTB Y13, Y0, Y2 // compare 0x5E mask with in
+	VPSUBB Y2, Y1, Y1    // sub gt_5E with hi_nibbles
+	VPSHUFB Y1, Y12, Y2  // shuffle lut roll
+	VPADDB Y2, Y0, Y0    // Now simply add the delta values to the input
+
+	AVX2_RESHUFFLE(Y0, Y6, Y7, Y8)
+	VEXTRACTI128 $1, Y0, X1
+	VMOVDQU X0, (AX)
+	VMOVDQU X1, 12(AX)
+	
+	SUBQ $32, CX
+	LEAQ 24(AX), AX
+	LEAQ 32(BX), BX
+	JMP avx2_loop
+
+avx2_one:
+	CMPQ CX, $24
+	JB avx2_done
+
+	VMOVDQU (BX), X0
+	VPSRLD $4, X0, X1
+	VPAND X9, X1, X1    // hi_nibbles
+	VPAND X9, X0, X2    // lo_nibbles
+	VPSHUFB X1, X10, X3 // hi
+	VPSHUFB X2, X11, X4 // lo
+
+	// validate
+	VPTEST X3, X4
+	JNZ avx2_done
+
+	// translate
+	VPCMPGTB X13, X0, X2 // compare 0x5E mask with in
+	VPSUBB X2, X1, X1    // sub gt_5E with hi_nibbles
+	VPSHUFB X1, X12, X2  // shuffle lut roll
+	VPADDB X2, X0, X0    // Now simply add the delta values to the input
+
+	AVX2_RESHUFFLE(X0, X6, X7, X8)
+	VMOVDQU X0, (AX)
+	SUBQ $16, CX
+
+avx2_done:
+	MOVQ CX, ret+48(FP)
+	VZEROUPPER
 	RET

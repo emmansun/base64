@@ -126,7 +126,7 @@ var RawURLEncoding = URLEncoding.WithPadding(NoPadding)
  */
 
  func encodeGeneric(enc *Encoding, dst, src []byte) {
-		// enc is a pointer receiver, so the use of enc.encode within the hot
+	// enc is a pointer receiver, so the use of enc.encode within the hot
 	// loop below means a nil check at every operation. Lift that nil check
 	// outside of the loop to speed up the encoder.
 	_ = enc.encode
@@ -172,6 +172,7 @@ var RawURLEncoding = URLEncoding.WithPadding(NoPadding)
 		}
 	}
  }
+
 // Encode encodes src using the encoding enc, writing
 // EncodedLen(len(src)) bytes to dst.
 //
