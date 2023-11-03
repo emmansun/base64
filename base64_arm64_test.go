@@ -3,6 +3,11 @@
 
 package base64
 
+import (
+	"bytes"
+	"testing"
+)
+
 func TestStdEncodeSIMD(t *testing.T) {
 	pairs := []testpair{
 		{"abcdefghijklabcdefghijklabcdefghijklabcdefghijkl", "YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts"},
