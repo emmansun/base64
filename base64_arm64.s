@@ -13,8 +13,8 @@ TEXT ·encodeAsm(SB),NOSPLIT,$0
 	MOVD lut+48(FP), R3
 
 	VLD1 (R3), [V8.B16, V9.B16, V10.B16, V11.B16]
-	MOVB $0x3F, R4
-	VDUP R3, V7.B16
+	MOVD $0x3F, R4
+	VDUP R4, V7.B16
 	EOR R5, R5, R5
 
 loop:
