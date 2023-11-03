@@ -3,6 +3,8 @@
 //go:build arm64 && !purego
 // +build arm64,!purego
 
+#include "textflag.h"
+
 //func encodeAsm(dst, src []byte, lut *[64]byte) int
 TEXT ·encodeAsm(SB),NOSPLIT,$0
 	MOVD dst_base+0(FP), R0
