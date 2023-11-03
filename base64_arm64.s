@@ -95,12 +95,12 @@ loop:
 	VORR V17.B16, V21.B16, V1.B16
 	VORR V18.B16, V22.B16, V2.B16
 	VORR V19.B16, V23.B16, V3.B16
-
+/*
 	// Check for invalid input, any value larger than 63:
 	WORD $0x7e2034f0 // VCMHI V7.B16, V0.B16, V16.B16
 	WORD $0x7e2134f1 // VCMHI V7.B16, V1.B16, V17.B16
 	WORD $0x7e2234f2 // VCMHI V7.B16, V2.B16, V18.B16
-	//WORD $0x7e2334f3 // VCMHI V7.B16, V3.B16, V19.B16
+	WORD $0x7e2334f3 // VCMHI V7.B16, V3.B16, V19.B16
 	
 	VORR V17.B16, V16.B16, V16.B16
 	VORR V18.B16, V16.B16, V16.B16
@@ -109,7 +109,7 @@ loop:
 	// Check that all bits are zero:
 	WORD $0x2e30aa05 // VUMAXV V16.B16, R5
 	CBNZ R5, done
-
+*/
 	// Compress four bytes into three:
 	VSHL $2, V0.B16, V4.B16
 	VUSHR $4, V1.B16, V16.B16
