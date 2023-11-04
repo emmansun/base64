@@ -107,7 +107,7 @@ loop:
 	VORR V19.B16, V16.B16, V16.B16
 
 	// Check that all bits are zero:
-	WORD $0x2e30aa05 // VUMAXV V16.B16, R5
+	WORD $0x6e30aa05 // VUMAXV V16.B16, R5
     MOVD R5, R2
     MOVD R5, (R0)
 /*    
