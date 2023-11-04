@@ -107,10 +107,11 @@ loop:
 	VORR V19.B16, V16.B16, V16.B16
 
 	// Check that all bits are zero:
-	WORD $0x6e30aa05 // VUMAXV V16.B16, R5
-    SUB $64, R2
-    VST1 [V16.B16], (R0)
-/*    
+    // Do NOT use UMAXV first
+	// WORD $0x6e30aa05 // VUMAXV V16.B16, R5
+    VMOV V16.D[0], R5
+	CBNZ R5, done
+    VMOV V16.D[1], R5
 	CBNZ R5, done
 
 	// Compress four bytes into three:
@@ -130,7 +131,7 @@ loop:
 
 	SUB $64, R2
 	B loop
-*/
+
 done:
 	MOVD R2, ret+56(FP)
 	RET
