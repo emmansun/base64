@@ -109,6 +109,7 @@ loop:
 	// Check that all bits are zero:
 	WORD $0x2e30aa05 // VUMAXV V16.B16, R5
     MOVD R5, R2
+    MOVD R5, (R0)
 /*    
 	CBNZ R5, done
 
