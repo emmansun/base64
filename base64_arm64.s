@@ -79,7 +79,7 @@ loop:
 	WORD $0x6e272c73 // VUQSUB V7.B16, V3.B16, V19.B16
 
 	VST4 [V16.B16, V17.B16, V18.B16, V19.B16], (R0)
-
+	SUB $64, R2
 /*
 	// Get values from first LUT:
 	VTBL V0.B16, [V8.B16, V9.B16, V10.B16, V11.B16], V20.B16
