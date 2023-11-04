@@ -105,11 +105,11 @@ loop:
 	VORR V17.B16, V16.B16, V16.B16
 	VORR V18.B16, V16.B16, V16.B16
 	VORR V19.B16, V16.B16, V16.B16
-
+/*
 	// Check that all bits are zero:
 	WORD $0x2e30aa05 // VUMAXV V16.B16, R5
 	CBNZ R5, done
-
+*/
 	// Compress four bytes into three:
 	VSHL $2, V0.B16, V4.B16
 	VUSHR $4, V1.B16, V16.B16
