@@ -40,7 +40,7 @@ func decode(enc *Encoding, dst, src []byte) (int, error) {
 
 		if remain < srcLen {
 			// decoded by SIMD
-			remain = srcLen - remain
+			remain = srcLen - remain // remain is decoded length now
 			src = src[remain:]
 			dstStart := (remain / 4) * 3
 			dst = dst[dstStart:]
