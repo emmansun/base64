@@ -107,9 +107,8 @@ loop:
 	VORR V19.B16, V16.B16, V16.B16
 
 	// Check that all bits are zero:
-	VMOV V16.D[0], R5
-	CBNZ R5, done
-	VMOV V16.D[1], R5
+	WORD $0x6e30aa11 // VUMAXV V16.B16, V17
+	VMOV V17.B[0], R5
 	CBNZ R5, done
 
 	// Compress four bytes into three:
