@@ -60,7 +60,7 @@ func TestUrlEncodeSIMD(t *testing.T) {
 		expected := []byte(p.encoded)
 		dst := make([]byte, len(expected))
 
-		ret := encodeAsm(dst, src, &StdEncoding.encode)
+		ret := encodeAsm(dst, src, &URLEncoding.encode)
 		if ret != len(expected) {
 			t.Fatalf("should return %v", len(expected))
 		}
