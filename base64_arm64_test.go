@@ -82,7 +82,7 @@ func TestUrlDecodeSIMD(t *testing.T) {
 		src := []byte(p.encoded)
 		dst := make([]byte, len(expected))
 
-		ret := decodeAsm(dst, src, &dencodeStdLut)
+		ret := decodeAsm(dst, src, &dencodeUrlLut)
 		if ret == len(src) {
 			t.Fatal("should return decode")
 		}
