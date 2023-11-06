@@ -5,6 +5,7 @@ Base64 with SIMD acceleration
 
 [![ci](https://github.com/emmansun/base64/actions/workflows/ci.yml/badge.svg)](https://github.com/emmansun/base64/actions/workflows/ci.yml)
 [![arm64-qemu](https://github.com/emmansun/base64/actions/workflows/ci_qemu.yml/badge.svg)](https://github.com/emmansun/base64/actions/workflows/ci_qemu.yml)
+[![Documentation](https://godoc.org/github.com/emmansun/base64?status.svg)](https://godoc.org/github.com/emmansun/base64)
 ![GitHub go.mod Go version (branch)](https://img.shields.io/github/go-mod/go-version/emmansun/base64)
 [![Release](https://img.shields.io/github/release/emmansun/base64/all.svg)](https://github.com/emmansun/base64/releases)
 
