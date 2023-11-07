@@ -2,7 +2,6 @@
 // https://github.com/aklomp/base64/blob/master/lib/arch/ssse3/enc_loop.c
 // https://gist.github.com/emmansun/c0f174a614a005f80f51b033500fd7fc
 //go:build amd64 && !purego
-// +build amd64,!purego
 
 #include "textflag.h"
 
