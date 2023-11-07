@@ -30,11 +30,6 @@ func encodeAsm(dst, src []byte, lut *[64]byte) int
 //go:noescape
 func decodeAsm(dst, src []byte, lut *[128]byte) int
 
-// If cond is 0, sets res = b, otherwise sets res = a.
-//
-//go:noescape
-func moveCond(res, a, b *byte, cond int)
-
 func encode(enc *Encoding, dst, src []byte) {
 	if len(src) >= 48 {
 		encoded := encodeAsm(dst, src, &enc.encode)

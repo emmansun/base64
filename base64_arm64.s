@@ -131,24 +131,3 @@ loop:
 done:
 	MOVD R2, ret+56(FP)
 	RET
-
-// func moveCond(res, a, b *byte, cond int)
-// If cond == 0 res=b, else res=a
-TEXT ·moveCond(SB),NOSPLIT,$0
-	MOVD	res+0(FP), R0
-	MOVD	a+8(FP), R1
-	MOVD	b+16(FP), R2
-	MOVD	cond+24(FP), R3
-
-	VEOR V0.B16, V0.B16, V0.B16
-	VMOV R3, V1.S4
-	VCMEQ V0.S4, V1.S4, V2.S4
-
-	VLD1 (R1), [V3.B16]
-	VLD1 (R2), [V4.B16]
-
-	// VBSL V3.B16, V4.B16, V2.B16
-	VBIF V2.B16, V3.B16, V4.B16
-
-	VST1 [V4.B16], (R0)
-	RET
