@@ -12,6 +12,7 @@ func TestStdEncodeSIMD(t *testing.T) {
 		{"abcdefghijkl0000", "YWJjZGVmZ2hpamts"},
 		{"\x2b\xf7\xcc\x27\x01\xfe\x43\x97\xb4\x9e\xbe\xed\x5a\xcc\x70\x90", "K/fMJwH+Q5e0nr7t"},
 		{"abcdefghijklabcdefghijkl0000", "YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts"},
+		{"abcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijkl", "YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts"},
 	}
 	for _, p := range pairs {
 		src := []byte(p.decoded)
@@ -20,7 +21,7 @@ func TestStdEncodeSIMD(t *testing.T) {
 
 		ret := encodeSIMD(dst, src, &encodeStdLut)
 		if ret != len(expected) {
-			t.Fatalf("should return %v", len(expected))
+			t.Fatalf("should return %v, got %v", len(expected), ret)
 		}
 		if !bytes.Equal(dst, expected) {
 			t.Fatalf("got %v", string(dst))

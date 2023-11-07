@@ -10,6 +10,15 @@ DATA reshuffle_mask<>+0x00(SB)/8, $0x0405030401020001
 DATA reshuffle_mask<>+0x08(SB)/8, $0x0a0b090a07080607
 GLOBL reshuffle_mask<>(SB), (NOPTR+RODATA), $16
 
+// Input, bytes MSB to LSB:
+// 0 0 0 0 x w v u t s r q p o n m
+// l k j i h g f e d c b a 0 0 0 0
+DATA reshuffle_mask32<>+0x00(SB)/8, $0x0809070805060405
+DATA reshuffle_mask32<>+0x08(SB)/8, $0x0e0f0d0e0b0c0a0b
+DATA reshuffle_mask32<>+0x10(SB)/8, $0x0405030401020001
+DATA reshuffle_mask32<>+0x18(SB)/8, $0x0a0b090a07080607
+GLOBL reshuffle_mask32<>(SB), (NOPTR+RODATA), $32
+
 DATA mulhi_mask<>+0x00(SB)/8, $0x0FC0FC000FC0FC00
 DATA mulhi_mask<>+0x08(SB)/8, $0x0FC0FC000FC0FC00
 GLOBL mulhi_mask<>(SB), (NOPTR+RODATA), $16
@@ -118,20 +127,19 @@ GLOBL dec_reshuffle_const2<>(SB), (NOPTR+RODATA), $16
 	VPSHUFB tmp1, lut, tmp1;                       \
 	VPADDB tmp1, in_out, in_out
 
-#define SSE_RESHUFFLE(in_out) \
-	PMADDUBSW dec_reshuffle_const0<>(SB), in_out;  \
-	PMADDWL dec_reshuffle_const1<>(SB), in_out;    \
-	PSHUFB dec_reshuffle_const2<>(SB), in_out
+#define AVX2_ENC_RESUFFLE(in_out, tmp, mulhi_mask, mulhi_const, mullo_mask, mullo_const) \
+	VPAND mulhi_mask, in_out, tmp;                     \
+	VPMULHUW mulhi_const, tmp, tmp;                    \
+	VPAND mullo_mask, in_out, in_out;                  \
+	VPMULLW mullo_const, in_out, in_out;               \
+	VPOR tmp, in_out, in_out
 
-#define AVX_RESHUFFLE(in_out) \
-	VPMADDUBSW dec_reshuffle_const0<>(SB), in_out, in_out;  \
-	VPMADDWD dec_reshuffle_const1<>(SB), in_out, in_out;    \
-	VPSHUFB dec_reshuffle_const2<>(SB), in_out, in_out
-
-#define AVX2_RESHUFFLE(in_out, mask0, mask1, mask2) \
-	VPMADDUBSW mask0, in_out, in_out;  \
-	VPMADDWD mask1, in_out, in_out;    \
-	VPSHUFB mask2, in_out, in_out
+#define AVX2_ENC_TRANSLATE(in_out, range1, range0, lut, tmp1, tmp2)     \
+	VPSUBUSB range1, in_out, tmp1;                    \
+	VPCMPGTB range0, in_out, tmp2;                    \
+	VPSUBB tmp2, tmp1, tmp1;                          \
+	VPSHUFB tmp1, lut, tmp1;                          \
+	VPADDB tmp1, in_out, in_out
 
 //func encodeSIMD(dst, src []byte, lut *[16]byte) int
 TEXT ·encodeSIMD(SB),NOSPLIT,$0
@@ -208,7 +216,7 @@ avx2:
 	VBROADCASTI128 (SI), Y13
 	XORQ SI, SI
 
-avx2_loop_28:
+avx2_first:
 	CMPQ CX, $28
 	JB avx2_one
 
@@ -219,18 +227,32 @@ avx2_loop_28:
 
 	// enc reshuffle
 	VPSHUFB Y6, Y0, Y0
-	VPAND Y7, Y0, Y1
-	VPMULHUW Y8, Y1, Y1
-	VPAND Y9, Y0, Y0
-	VPMULLW Y10, Y0, Y0
-	VPOR Y1, Y0, Y0
+	AVX2_ENC_RESUFFLE(Y0, Y1, Y7, Y8, Y9, Y10)
 
 	// enc translate
-	VPSUBUSB Y12, Y0, Y1
-	VPCMPGTB Y11, Y0, Y2
-	VPSUBB Y2, Y1, Y1
-	VPSHUFB Y1, Y13, Y1
-	VPADDB Y1, Y0, Y0
+	AVX2_ENC_TRANSLATE(Y0, Y12, Y11, Y13, Y1, Y2)
+
+	// store encoded
+	VMOVDQU Y0, (AX)(SI*1) 
+
+	ADDQ $32, SI
+	SUBQ $24, CX
+
+	LEAQ 24(BX), BX	
+
+avx2_loop_28:
+	CMPQ CX, $28
+	JB avx2_one
+
+	// load data
+	VMOVDQU -4(BX), Y0
+
+	// enc reshuffle
+	VPSHUFB reshuffle_mask32<>(SB), Y0, Y0
+	AVX2_ENC_RESUFFLE(Y0, Y1, Y7, Y8, Y9, Y10)
+
+	// enc translate
+	AVX2_ENC_TRANSLATE(Y0, Y12, Y11, Y13, Y1, Y2)
 
 	// store encoded
 	VMOVDQU Y0, (AX)(SI*1) 
@@ -245,21 +267,15 @@ avx2_one:
 	CMPQ CX, $16
 	JB avx2_done
 
-	// enc reshuffle
+	// load data
 	VMOVDQU (BX), X0
+
+	// enc reshuffle
 	VPSHUFB X6, X0, X0
-	VPAND X7, X0, X1
-	VPMULHUW X8, X1, X1
-	VPAND X9, X0, X0
-	VPMULLW X10, X0, X0
-	VPOR X1, X0, X0
+	AVX2_ENC_RESUFFLE(X0, X1, X7, X8, X9, X10)
 
 	// enc translate
-	VPSUBUSB X12, X0, X1
-	VPCMPGTB X11, X0, X2
-	VPSUBB X2, X1, X1
-	VPSHUFB X1, X13, X1
-	VPADDB X1, X0, X0
+	AVX2_ENC_TRANSLATE(X0, X12, X11, X13, X1, X2)
 
 	// store encoded
 	VMOVDQU X0, (AX)(SI*1) 
@@ -269,6 +285,52 @@ avx2_done:
 	MOVQ SI, ret+56(FP)
 	VZEROUPPER
 	RET
+
+#define SSE_DECODE_VALIDATE(in, hi_nibbles, tmp, lut_hi, lut_lo, zero, out) \
+	MOVOU in, hi_nibbles;                 \
+	MOVOU in, tmp;                        \
+	PSRLL $4, hi_nibbles;                 \
+	PAND nibble_mask<>(SB), hi_nibbles;   \     // hi_nibbles
+	PAND nibble_mask<>(SB), tmp;          \     // lo_nibbles
+	PSHUFB hi_nibbles, lut_hi;            \                 // hi
+	PSHUFB tmp, lut_lo;                   \                 // lo
+	\// validate
+	PAND lut_lo, lut_hi;                  \    // hi & lo
+	PCMPGTB zero, lut_hi;                 \ // compare with zero
+	PMOVMSKB lut_hi, out;                 \ // mm_movemask_epi8
+
+#define AVX_DECODE_VALIDATE(in, hi_nibbles, tmp1, tmp2, lut_hi, lut_lo, zero, out) \
+	VPSRLD $4, in, hi_nibbles;                         \
+	VPAND nibble_mask<>(SB), hi_nibbles, hi_nibbles;   \ // hi_nibbles
+	VPAND nibble_mask<>(SB), in, tmp1;                 \ // lo_nibbles
+	VPSHUFB hi_nibbles, lut_hi, tmp2;                  \             // hi
+	VPSHUFB tmp1, lut_lo, tmp1;                        \             // lo
+	\// validate
+	VPAND tmp1, tmp2, tmp2;                            \     // hi & lo
+	VPCMPGTB zero, tmp2, tmp2;                         \ // compare with zero
+	VPMOVMSKB tmp2, out
+
+#define AVX2_DECODE_HI_LO(in, hi_nibbles, hi, lo, nibble_mask, lut_hi, lut_lo) \
+	VPSRLD $4, in, hi_nibbles;                    \
+	VPAND nibble_mask, hi_nibbles, hi_nibbles;    \    // hi_nibbles
+	VPAND nibble_mask, in, lo;                    \    // lo_nibbles
+	VPSHUFB hi_nibbles, lut_hi, hi;               \ // hi
+	VPSHUFB lo, lut_lo, lo;                       \ // lo
+
+#define SSE_DECODE_RESHUFFLE(in_out) \
+	PMADDUBSW dec_reshuffle_const0<>(SB), in_out;  \
+	PMADDWL dec_reshuffle_const1<>(SB), in_out;    \
+	PSHUFB dec_reshuffle_const2<>(SB), in_out
+
+#define AVX_DECODE_RESHUFFLE(in_out) \
+	VPMADDUBSW dec_reshuffle_const0<>(SB), in_out, in_out;  \
+	VPMADDWD dec_reshuffle_const1<>(SB), in_out, in_out;    \
+	VPSHUFB dec_reshuffle_const2<>(SB), in_out, in_out
+
+#define AVX2_DECODE_RESHUFFLE(in_out, mask0, mask1, mask2) \
+	VPMADDUBSW mask0, in_out, in_out;  \
+	VPMADDWD mask1, in_out, in_out;    \
+	VPSHUFB mask2, in_out, in_out
 
 //func decodeStdSIMD(dst, src []byte) int
 TEXT ·decodeStdSIMD(SB),NOSPLIT,$0
@@ -288,22 +350,13 @@ loop:
 	CMPQ CX, $24
 	JB done
 
+	// load data
 	MOVOU (BX), X0
-	MOVOU X0, X1
-	MOVOU X0, X2
-
-	PSRLL $4, X1
-	PAND nibble_mask<>(SB), X1     // hi_nibbles
-	PAND nibble_mask<>(SB), X2     // lo_nibbles
-	MOVOU stddec_lut_hi<>(SB), X10 // lut_hi
-	PSHUFB X1, X10                 // hi
-	MOVOU stddec_lut_lo<>(SB), X11 // lut_lo
-	PSHUFB X2, X11                 // lo
 
 	// validate
-	PAND X11, X10    // hi & lo
-	PCMPGTB X12, X10 // compare with zero
-	PMOVMSKB X10, SI // mm_movemask_epi8
+	MOVOU stddec_lut_hi<>(SB), X10 // lut_hi
+	MOVOU stddec_lut_lo<>(SB), X11 // lut_lo
+	SSE_DECODE_VALIDATE(X0, X1, X2, X10, X11, X12, SI)
 	CMPQ SI, $0
 	JNE done
 
@@ -315,7 +368,7 @@ loop:
 	PSHUFB X1, X2                   // shuffle lut roll
 	PADDB X2, X0                    // Now simply add the delta values to the input
 
-	SSE_RESHUFFLE(X0)
+	SSE_DECODE_RESHUFFLE(X0)
 	MOVOU X0, (AX)
 
 	SUBQ $16, CX
@@ -337,18 +390,11 @@ avx_loop:
 	CMPQ CX, $24
 	JB avx_done
 
+	// load data
 	VMOVDQU (BX), X0
 
-	VPSRLD $4, X0, X1
-	VPAND nibble_mask<>(SB), X1, X1 // hi_nibbles
-	VPAND nibble_mask<>(SB), X0, X2 // lo_nibbles
-	VPSHUFB X1, X10, X3             // hi
-	VPSHUFB X2, X11, X4             // lo
-
-	// validate
-	VPAND X4, X3, X3     // hi & lo
-	VPCMPGTB X12, X3, X3 // compare with zero
-	VPMOVMSKB X3, SI
+	// valiate
+	AVX_DECODE_VALIDATE(X0, X1, X2, X3, X10, X11, X12, SI)
 	CMPQ SI, $0
 	JNE avx_done
 
@@ -358,7 +404,7 @@ avx_loop:
 	VPSHUFB X1, X13, X2                // shuffle lut roll
 	VPADDB X2, X0, X0                  // Now simply add the delta values to the input
 
-	AVX_RESHUFFLE(X0)
+	AVX_DECODE_RESHUFFLE(X0)
 	VMOVDQU X0, (AX)
 
 	SUBQ $16, CX
@@ -382,15 +428,12 @@ avx2:
 avx2_loop:
 	CMPQ CX, $40
 	JB avx2_one
-	
+
+	// load data	
 	VMOVDQU (BX), Y0
-	VPSRLD $4, Y0, Y1
-	VPAND Y9, Y1, Y1    // hi_nibbles
-	VPAND Y9, Y0, Y2    // lo_nibbles
-	VPSHUFB Y1, Y10, Y3 // hi
-	VPSHUFB Y2, Y11, Y4 // lo
 
 	// validate
+	AVX2_DECODE_HI_LO(Y0, Y1, Y3, Y4, Y9, Y10, Y11)
 	VPTEST Y3, Y4
 	JNZ avx2_done
 
@@ -400,7 +443,7 @@ avx2_loop:
 	VPSHUFB Y1, Y12, Y2 // shuffle lut roll
 	VPADDB Y2, Y0, Y0   // Now simply add the delta values to the input
 
-	AVX2_RESHUFFLE(Y0, Y6, Y7, Y8)
+	AVX2_DECODE_RESHUFFLE(Y0, Y6, Y7, Y8)
 	VEXTRACTI128 $1, Y0, X1
 	VMOVDQU X0, (AX)
 	VMOVDQU X1, 12(AX)
@@ -414,14 +457,11 @@ avx2_one:
 	CMPQ CX, $24
 	JB avx2_done
 
+	// load data
 	VMOVDQU (BX), X0
-	VPSRLD $4, X0, X1
-	VPAND X9, X1, X1    // hi_nibbles
-	VPAND X9, X0, X2    // lo_nibbles
-	VPSHUFB X1, X10, X3 // hi
-	VPSHUFB X2, X11, X4 // lo
 
 	// validate
+	AVX2_DECODE_HI_LO(X0, X1, X3, X4, X9, X10, X11)
 	VPTEST X3, X4
 	JNZ avx2_done
 
@@ -431,7 +471,7 @@ avx2_one:
 	VPSHUFB X1, X12, X2 // shuffle lut roll
 	VPADDB X2, X0, X0   // Now simply add the delta values to the input
 
-	AVX2_RESHUFFLE(X0, X6, X7, X8)
+	AVX2_DECODE_RESHUFFLE(X0, X6, X7, X8)
 	VMOVDQU X0, (AX)
 	SUBQ $16, CX
 
@@ -458,22 +498,13 @@ loop:
 	CMPQ CX, $24
 	JB done
 
+	// load data
 	MOVOU (BX), X0
-	MOVOU X0, X1
-	MOVOU X0, X2
-
-	PSRLL $4, X1
-	PAND nibble_mask<>(SB), X1     // hi_nibbles
-	PAND nibble_mask<>(SB), X2     // lo_nibbles
-	MOVOU urldec_lut_hi<>(SB), X10 // lut_hi
-	PSHUFB X1, X10                 // hi
-	MOVOU urldec_lut_lo<>(SB), X11 // lut_lo
-	PSHUFB X2, X11                 // lo
 
 	// validate
-	PAND X11, X10    // hi & lo
-	PCMPGTB X12, X10 // compare with zero
-	PMOVMSKB X10, SI // mm_movemask_epi8
+	MOVOU urldec_lut_hi<>(SB), X10 // lut_hi
+	MOVOU urldec_lut_lo<>(SB), X11 // lut_lo
+	SSE_DECODE_VALIDATE(X0, X1, X2, X10, X11, X12, SI)
 	CMPQ SI, $0
 	JNE done
 
@@ -485,7 +516,7 @@ loop:
 	PSHUFB X1, X2                 // shuffle lut roll
 	PADDB X2, X0                  // Now simply add the delta values to the input
 
-	SSE_RESHUFFLE(X0)
+	SSE_DECODE_RESHUFFLE(X0)
 	MOVOU X0, (AX)
 
 	SUBQ $16, CX
@@ -507,18 +538,11 @@ avx_loop:
 	CMPQ CX, $24
 	JB avx_done
 
+	// load data
 	VMOVDQU (BX), X0
 
-	VPSRLD $4, X0, X1
-	VPAND nibble_mask<>(SB), X1, X1 // hi_nibbles
-	VPAND nibble_mask<>(SB), X0, X2 // lo_nibbles
-	VPSHUFB X1, X10, X3             // hi
-	VPSHUFB X2, X11, X4             // lo
-
 	// validate
-	VPAND X4, X3, X3     // hi & lo
-	VPCMPGTB X12, X3, X3 // compare with zero
-	VPMOVMSKB X3, SI
+	AVX_DECODE_VALIDATE(X0, X1, X2, X3, X10, X11, X12, SI)
 	CMPQ SI, $0
 	JNE avx_done
 
@@ -528,7 +552,7 @@ avx_loop:
 	VPSHUFB X1, X13, X2                // shuffle lut roll
 	VPADDB X2, X0, X0                  // Now simply add the delta values to the input
 
-	AVX_RESHUFFLE(X0)
+	AVX_DECODE_RESHUFFLE(X0)
 	VMOVDQU X0, (AX)
 
 	SUBQ $16, CX
@@ -554,14 +578,11 @@ avx2_loop:
 	CMPQ CX, $40
 	JB avx2_one
 	
+	// load data
 	VMOVDQU (BX), Y0
-	VPSRLD $4, Y0, Y1
-	VPAND Y9, Y1, Y1    // hi_nibbles
-	VPAND Y9, Y0, Y2    // lo_nibbles
-	VPSHUFB Y1, Y10, Y3 // hi
-	VPSHUFB Y2, Y11, Y4 // lo
 
 	// validate
+	AVX2_DECODE_HI_LO(Y0, Y1, Y3, Y4, Y9, Y10, Y11)
 	VPTEST Y3, Y4
 	JNZ avx2_done
 
@@ -571,7 +592,7 @@ avx2_loop:
 	VPSHUFB Y1, Y12, Y2  // shuffle lut roll
 	VPADDB Y2, Y0, Y0    // Now simply add the delta values to the input
 
-	AVX2_RESHUFFLE(Y0, Y6, Y7, Y8)
+	AVX2_DECODE_RESHUFFLE(Y0, Y6, Y7, Y8)
 	VEXTRACTI128 $1, Y0, X1
 	VMOVDQU X0, (AX)
 	VMOVDQU X1, 12(AX)
@@ -585,14 +606,11 @@ avx2_one:
 	CMPQ CX, $24
 	JB avx2_done
 
+	// load data
 	VMOVDQU (BX), X0
-	VPSRLD $4, X0, X1
-	VPAND X9, X1, X1    // hi_nibbles
-	VPAND X9, X0, X2    // lo_nibbles
-	VPSHUFB X1, X10, X3 // hi
-	VPSHUFB X2, X11, X4 // lo
 
 	// validate
+	AVX2_DECODE_HI_LO(X0, X1, X3, X4, X9, X10, X11)
 	VPTEST X3, X4
 	JNZ avx2_done
 
@@ -602,7 +620,7 @@ avx2_one:
 	VPSHUFB X1, X12, X2  // shuffle lut roll
 	VPADDB X2, X0, X0    // Now simply add the delta values to the input
 
-	AVX2_RESHUFFLE(X0, X6, X7, X8)
+	AVX2_DECODE_RESHUFFLE(X0, X6, X7, X8)
 	VMOVDQU X0, (AX)
 	SUBQ $16, CX
 
