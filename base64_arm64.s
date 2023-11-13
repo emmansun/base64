@@ -1,5 +1,6 @@
 // Reference
 // https://github.com/aklomp/base64/blob/master/lib/arch/neon64/enc_loop.c
+// https://github.com/aklomp/base64/blob/master/lib/arch/neon64/dec_loop.c
 //go:build arm64 && !purego
 
 #include "textflag.h"

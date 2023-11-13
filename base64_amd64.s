@@ -1,18 +1,17 @@
 // Reference:
 // https://github.com/aklomp/base64/blob/master/lib/arch/ssse3/enc_loop.c
+// https://github.com/aklomp/base64/blob/master/lib/arch/ssse3/dec_loop.c
 // https://gist.github.com/emmansun/c0f174a614a005f80f51b033500fd7fc
 //go:build amd64 && !purego
 
 #include "textflag.h"
 
-// shuffle byte order for input 12 butes
+// shuffle byte order for input 12 bytes
 DATA reshuffle_mask<>+0x00(SB)/8, $0x0405030401020001
 DATA reshuffle_mask<>+0x08(SB)/8, $0x0a0b090a07080607
 GLOBL reshuffle_mask<>(SB), (NOPTR+RODATA), $16
 
-// Input, bytes MSB to LSB:
-// 0 0 0 0 x w v u t s r q p o n m
-// l k j i h g f e d c b a 0 0 0 0
+// shuffle byte order for input 32 bytes
 DATA reshuffle_mask32<>+0x00(SB)/8, $0x0809070805060405
 DATA reshuffle_mask32<>+0x08(SB)/8, $0x0e0f0d0e0b0c0a0b
 DATA reshuffle_mask32<>+0x10(SB)/8, $0x0405030401020001
@@ -35,10 +34,12 @@ DATA mullo_const<>+0x00(SB)/8, $0x0100001001000010
 DATA mullo_const<>+0x08(SB)/8, $0x0100001001000010
 GLOBL mullo_const<>(SB), (NOPTR+RODATA), $16
 
+// const value 25
 DATA range_0_end<>+0x00(SB)/8, $0x1919191919191919
 DATA range_0_end<>+0x08(SB)/8, $0x1919191919191919
 GLOBL range_0_end<>(SB), (NOPTR+RODATA), $16
 
+// const value 51
 DATA range_1_end<>+0x00(SB)/8, $0x3333333333333333
 DATA range_1_end<>+0x08(SB)/8, $0x3333333333333333
 GLOBL range_1_end<>(SB), (NOPTR+RODATA), $16
@@ -74,10 +75,10 @@ DATA urldec_lut_roll<>+0x00(SB)/8, $0xB9E0BFBF04110000
 DATA urldec_lut_roll<>+0x08(SB)/8, $0x00000000000000B9
 GLOBL urldec_lut_roll<>(SB), (NOPTR+RODATA), $16
 
-// 0x5E mask
-DATA url_5e_mask<>+0x00(SB)/8, $0x5E5E5E5E5E5E5E5E
-DATA url_5e_mask<>+0x08(SB)/8, $0x5E5E5E5E5E5E5E5E
-GLOBL url_5e_mask<>(SB), (NOPTR+RODATA), $16
+// const value 94
+DATA url_const_5e<>+0x00(SB)/8, $0x5E5E5E5E5E5E5E5E
+DATA url_const_5e<>+0x08(SB)/8, $0x5E5E5E5E5E5E5E5E
+GLOBL url_const_5e<>(SB), (NOPTR+RODATA), $16
 
 // below for decode reshuffle
 DATA dec_reshuffle_const0<>+0x00(SB)/8, $0x0140014001400140
@@ -95,21 +96,49 @@ GLOBL dec_reshuffle_const2<>(SB), (NOPTR+RODATA), $16
 // Requires SSSE3
 #define SSE_ENC(in_out, lut, tmp1, tmp2) \
 	\ // enc reshuffle
+	\ // Input, bytes MSB to LSB:
+	\ // 0 0 0 0 l k j i h g f e d c b a
 	PSHUFB reshuffle_mask<>(SB), in_out;           \
+	\ // in_out, bytes MSB to LSB:
+	\ // k l j k
+	\ // h i g h
+	\ // e f d e
+	\ // b c a b	
 	MOVOU in_out, tmp1;                            \
 	PAND mulhi_mask<>(SB), tmp1;                   \
+	\ // bits, upper case are most significant bits, lower case are least significant bits
+	\ // 0000kkkk LL000000 JJJJJJ00 00000000
+	\ // 0000hhhh II000000 GGGGGG00 00000000
+	\ // 0000eeee FF000000 DDDDDD00 00000000
+	\ // 0000bbbb CC000000 AAAAAA00 00000000	
 	PMULHUW mulhi_const<>(SB), tmp1;               \
+	\ // 00000000 00kkkkLL 00000000 00JJJJJJ
+	\ // 00000000 00hhhhII 00000000 00GGGGGG
+	\ // 00000000 00eeeeFF 00000000 00DDDDDD
+	\ // 00000000 00bbbbCC 00000000 00AAAAAA	
 	PAND mullo_mask<>(SB), in_out;                 \
+	\ // 00000000 00llllll 000000jj KKKK0000
+	\ // 00000000 00iiiiii 000000gg HHHH0000
+	\ // 00000000 00ffffff 000000dd EEEE0000
+	\ // 00000000 00cccccc 000000aa BBBB0000	
 	PMULLW mullo_const<>(SB), in_out;              \
+	\ // 00llllll 00000000 00jjKKKK 00000000
+	\ // 00iiiiii 00000000 00ggHHHH 00000000
+	\ // 00ffffff 00000000 00ddEEEE 00000000
+	\ // 00cccccc 00000000 00aaBBBB 00000000	
 	POR tmp1, in_out;                              \
+	\ // 00llllll 00kkkkLL 00jjKKKK 00JJJJJJ
+	\ // 00iiiiii 00hhhhII 00ggHHHH 00GGGGGG
+	\ // 00ffffff 00eeeeFF 00ddEEEE 00DDDDDD
+	\ // 00cccccc 00bbbbCC 00aaBBBB 00AAAAAA	
 	\ // enc translate
 	MOVOU in_out, tmp1;                            \
 	MOVOU in_out, tmp2;                            \
-	PSUBUSB range_1_end<>(SB), tmp2;               \
-	PCMPGTB range_0_end<>(SB), tmp1;               \
-	PSUBB tmp1, tmp2;                              \
+	PSUBUSB range_1_end<>(SB), tmp2;               \ // Create LUT indices from the input. The index for range #0 is right, others are 1 less than expected.
+	PCMPGTB range_0_end<>(SB), tmp1;               \ // mask is 0xFF (-1) for range #[1..4] and 0x00 for range #0.
+	PSUBB tmp1, tmp2;                              \ // Subtract -1, so add 1 to indices for range #[1..4]. All indices are now correct.
 	MOVOU lut, tmp1;                               \
-	PSHUFB tmp2, tmp1;                             \
+	PSHUFB tmp2, tmp1;                             \ // get offsets and add offsets to input value.
 	PADDB tmp1, in_out
 
 #define AVX_ENC(in_out, lut, tmp1, tmp2) \
@@ -121,10 +150,10 @@ GLOBL dec_reshuffle_const2<>(SB), (NOPTR+RODATA), $16
 	VPMULLW mullo_const<>(SB), in_out, in_out;     \
 	VPOR tmp1, in_out, in_out;                     \
 	\ // enc translate
-	VPSUBUSB range_1_end<>(SB), in_out, tmp1;      \
-	VPCMPGTB range_0_end<>(SB), in_out, tmp2;      \
-	VPSUBB tmp2, tmp1, tmp1;                       \
-	VPSHUFB tmp1, lut, tmp1;                       \
+	VPSUBUSB range_1_end<>(SB), in_out, tmp1;      \ // Create LUT indices from the input. The index for range #0 is right, others are 1 less than expected.
+	VPCMPGTB range_0_end<>(SB), in_out, tmp2;      \ // mask is 0xFF (-1) for range #[1..4] and 0x00 for range #0.
+	VPSUBB tmp2, tmp1, tmp1;                       \ // Subtract -1, so add 1 to indices for range #[1..4]. All indices are now correct.
+	VPSHUFB tmp1, lut, tmp1;                       \ // get offsets and add offsets to input value.
 	VPADDB tmp1, in_out, in_out
 
 #define AVX2_ENC_RESUFFLE(in_out, tmp, mulhi_mask, mulhi_const, mullo_mask, mullo_const) \
@@ -135,10 +164,10 @@ GLOBL dec_reshuffle_const2<>(SB), (NOPTR+RODATA), $16
 	VPOR tmp, in_out, in_out
 
 #define AVX2_ENC_TRANSLATE(in_out, range1, range0, lut, tmp1, tmp2)     \
-	VPSUBUSB range1, in_out, tmp1;                    \
-	VPCMPGTB range0, in_out, tmp2;                    \
-	VPSUBB tmp2, tmp1, tmp1;                          \
-	VPSHUFB tmp1, lut, tmp1;                          \
+	VPSUBUSB range1, in_out, tmp1;                    \ // Create LUT indices from the input. The index for range #0 is right, others are 1 less than expected.
+	VPCMPGTB range0, in_out, tmp2;                    \ // mask is 0xFF (-1) for range #[1..4] and 0x00 for range #0.
+	VPSUBB tmp2, tmp1, tmp1;                          \ // Subtract -1, so add 1 to indices for range #[1..4]. All indices are now correct.
+	VPSHUFB tmp1, lut, tmp1;                          \ // get offsets and add offsets to input value.
 	VPADDB tmp1, in_out, in_out
 
 //func encodeSIMD(dst, src []byte, lut *[16]byte) int
@@ -220,7 +249,9 @@ avx2_first:
 	CMPQ CX, $28
 	JB avx2_one
 
-	// load data
+	// load data, bytes MSB to LSB:
+	// 0 0 0 0 x w v u t s r q p o n m
+	// 0 0 0 0 l k j i h g f e d c b a
 	VMOVDQU (BX), X0
 	VMOVDQU 12(BX), X1
 	VINSERTI128 $1, X1, Y0, Y0
@@ -244,7 +275,9 @@ avx2_loop_28:
 	CMPQ CX, $28
 	JB avx2_one
 
-	// load data
+	// load data, bytes MSB to LSB:
+	// 0 0 0 0 x w v u t s r q p o n m
+	// l k j i h g f e d c b a 0 0 0 0	
 	VMOVDQU -4(BX), Y0
 
 	// enc reshuffle
@@ -290,12 +323,12 @@ avx2_done:
 	MOVOU in, hi_nibbles;                 \
 	MOVOU in, tmp;                        \
 	PSRLL $4, hi_nibbles;                 \
-	PAND nibble_mask<>(SB), hi_nibbles;   \     // hi_nibbles
-	PAND nibble_mask<>(SB), tmp;          \     // lo_nibbles
-	PSHUFB hi_nibbles, lut_hi;            \                 // hi
-	PSHUFB tmp, lut_lo;                   \                 // lo
+	PAND nibble_mask<>(SB), hi_nibbles;   \ // hi_nibbles
+	PAND nibble_mask<>(SB), tmp;          \ // lo_nibbles
+	PSHUFB hi_nibbles, lut_hi;            \ // hi
+	PSHUFB tmp, lut_lo;                   \ // lo
 	\// validate
-	PAND lut_lo, lut_hi;                  \    // hi & lo
+	PAND lut_lo, lut_hi;                  \ // hi & lo
 	PCMPGTB zero, lut_hi;                 \ // compare with zero
 	PMOVMSKB lut_hi, out;                 \ // mm_movemask_epi8
 
@@ -303,23 +336,44 @@ avx2_done:
 	VPSRLD $4, in, hi_nibbles;                         \
 	VPAND nibble_mask<>(SB), hi_nibbles, hi_nibbles;   \ // hi_nibbles
 	VPAND nibble_mask<>(SB), in, tmp1;                 \ // lo_nibbles
-	VPSHUFB hi_nibbles, lut_hi, tmp2;                  \             // hi
-	VPSHUFB tmp1, lut_lo, tmp1;                        \             // lo
+	VPSHUFB hi_nibbles, lut_hi, tmp2;                  \ // hi
+	VPSHUFB tmp1, lut_lo, tmp1;                        \ // lo
 	\// validate
-	VPAND tmp1, tmp2, tmp2;                            \     // hi & lo
+	VPAND tmp1, tmp2, tmp2;                            \ // hi & lo
 	VPCMPGTB zero, tmp2, tmp2;                         \ // compare with zero
 	VPMOVMSKB tmp2, out
 
 #define AVX2_DECODE_HI_LO(in, hi_nibbles, hi, lo, nibble_mask, lut_hi, lut_lo) \
 	VPSRLD $4, in, hi_nibbles;                    \
-	VPAND nibble_mask, hi_nibbles, hi_nibbles;    \    // hi_nibbles
-	VPAND nibble_mask, in, lo;                    \    // lo_nibbles
+	VPAND nibble_mask, hi_nibbles, hi_nibbles;    \ // hi_nibbles
+	VPAND nibble_mask, in, lo;                    \ // lo_nibbles
 	VPSHUFB hi_nibbles, lut_hi, hi;               \ // hi
 	VPSHUFB lo, lut_lo, lo;                       \ // lo
 
+// uses PMADDUBSW (_mm_maddubs_epi16) / PMADDWL (_mm_madd_epi16) and PSHUFB to reshuffle bits.
+//
+// in bits, upper case are most significant bits, lower case are least significant bits
+// 00llllll 00kkkkLL 00jjKKKK 00JJJJJJ
+// 00iiiiii 00hhhhII 00ggHHHH 00GGGGGG
+// 00ffffff 00eeeeFF 00ddEEEE 00DDDDDD
+// 00cccccc 00bbbbCC 00aaBBBB 00AAAAAA
+//
+// out bits, upper case are most significant bits, lower case are least significant bits:
+// 00000000 00000000 00000000 00000000
+// LLllllll KKKKkkkk JJJJJJjj IIiiiiii
+// HHHHhhhh GGGGGGgg FFffffff EEEEeeee
+// DDDDDDdd CCcccccc BBBBbbbb AAAAAAaa
 #define SSE_DECODE_RESHUFFLE(in_out) \
-	PMADDUBSW dec_reshuffle_const0<>(SB), in_out;  \
-	PMADDWL dec_reshuffle_const1<>(SB), in_out;    \
+	PMADDUBSW dec_reshuffle_const0<>(SB), in_out;  \ // merge ab and bc
+	\ // 0000kkkk LLllllll 0000JJJJ JJjjKKKK
+	\ // 0000hhhh IIiiiiii 0000GGGG GGggHHHH
+	\ // 0000eeee FFffffff 0000DDDD DDddEEEE
+	\ // 0000bbbb CCcccccc 0000AAAA AAaaBBBB	
+	PMADDWL dec_reshuffle_const1<>(SB), in_out;  \
+	\ // 00000000 JJJJJJjj KKKKkkkk LLllllll
+	\ // 00000000 GGGGGGgg HHHHhhhh IIiiiiii
+	\ // 00000000 DDDDDDdd EEEEeeee FFffffff
+	\ // 00000000 AAAAAAaa BBBBbbbb CCcccccc	
 	PSHUFB dec_reshuffle_const2<>(SB), in_out
 
 #define AVX_DECODE_RESHUFFLE(in_out) \
@@ -362,7 +416,7 @@ loop:
 
 	// translate
 	MOVOU nibble_mask<>(SB), X2
-	PCMPEQB X0, X2                  // compare nibble mask with in
+	PCMPEQB X0, X2                  // compare 0x2F with in
 	PADDB X2, X1                    // add eq_2F with hi_nibbles
 	MOVOU stddec_lut_roll<>(SB), X2
 	PSHUFB X1, X2                   // shuffle lut roll
@@ -399,7 +453,7 @@ avx_loop:
 	JNE avx_done
 
 	// translate
-	VPCMPEQB nibble_mask<>(SB), X0, X2 // compare nibble mask with in
+	VPCMPEQB nibble_mask<>(SB), X0, X2 // compare 0x2F with in
 	VPADDB X2, X1, X1                  // add eq_2F with hi_nibbles
 	VPSHUFB X1, X13, X2                // shuffle lut roll
 	VPADDB X2, X0, X0                  // Now simply add the delta values to the input
@@ -438,7 +492,7 @@ avx2_loop:
 	JNZ avx2_done
 
 	// translate
-	VPCMPEQB Y9, Y0, Y2 // compare nibble mask with in
+	VPCMPEQB Y9, Y0, Y2 // compare 0x2F with in
 	VPADDB Y2, Y1, Y1   // add eq_2F with hi_nibbles
 	VPSHUFB Y1, Y12, Y2 // shuffle lut roll
 	VPADDB Y2, Y0, Y0   // Now simply add the delta values to the input
@@ -466,7 +520,7 @@ avx2_one:
 	JNZ avx2_done
 
 	// translate
-	VPCMPEQB X9, X0, X2 // compare nibble mask with in
+	VPCMPEQB X9, X0, X2 // compare 0x2F with in
 	VPADDB X2, X1, X1   // add eq_2F with hi_nibbles
 	VPSHUFB X1, X12, X2 // shuffle lut roll
 	VPADDB X2, X0, X0   // Now simply add the delta values to the input
@@ -510,7 +564,7 @@ loop:
 
 	// translate
 	MOVOU X0, X2
-	PCMPGTB url_5e_mask<>(SB), X2 // compare 0x5E mask with in
+	PCMPGTB url_const_5e<>(SB), X2 // compare 0x5E with in
 	PSUBB X2, X1                  // sub gt_5E with hi_nibbles
 	MOVOU urldec_lut_roll<>(SB), X2
 	PSHUFB X1, X2                 // shuffle lut roll
@@ -547,7 +601,7 @@ avx_loop:
 	JNE avx_done
 
 	// translate
-	VPCMPGTB url_5e_mask<>(SB), X0, X2 // compare 0x5E mask with in
+	VPCMPGTB url_const_5e<>(SB), X0, X2 // compare 0x5E with in
 	VPSUBB X2, X1, X1                  // sub gt_5E with hi_nibbles
 	VPSHUFB X1, X13, X2                // shuffle lut roll
 	VPADDB X2, X0, X0                  // Now simply add the delta values to the input
@@ -572,7 +626,7 @@ avx2:
 	VBROADCASTI128 dec_reshuffle_const0<>(SB), Y6
 	VBROADCASTI128 dec_reshuffle_const1<>(SB), Y7
 	VBROADCASTI128 dec_reshuffle_const2<>(SB), Y8
-	VBROADCASTI128 url_5e_mask<>(SB), Y13
+	VBROADCASTI128 url_const_5e<>(SB), Y13
 
 avx2_loop:
 	CMPQ CX, $40
@@ -587,7 +641,7 @@ avx2_loop:
 	JNZ avx2_done
 
 	// translate
-	VPCMPGTB Y13, Y0, Y2 // compare 0x5E mask with in
+	VPCMPGTB Y13, Y0, Y2 // compare 0x5E with in
 	VPSUBB Y2, Y1, Y1    // sub gt_5E with hi_nibbles
 	VPSHUFB Y1, Y12, Y2  // shuffle lut roll
 	VPADDB Y2, Y0, Y0    // Now simply add the delta values to the input
@@ -615,7 +669,7 @@ avx2_one:
 	JNZ avx2_done
 
 	// translate
-	VPCMPGTB X13, X0, X2 // compare 0x5E mask with in
+	VPCMPGTB X13, X0, X2 // compare 0x5E with in
 	VPSUBB X2, X1, X1    // sub gt_5E with hi_nibbles
 	VPSHUFB X1, X12, X2  // shuffle lut roll
 	VPADDB X2, X0, X0    // Now simply add the delta values to the input

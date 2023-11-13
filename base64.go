@@ -36,7 +36,24 @@ const (
 const encodeStd = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 const encodeURL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
+// A lookup table containing the absolute offsets for all ranges for STD encoding.
+// Translate values 0..63 to the Base64 alphabet. There are five sets:
+// #  From      To         Abs    Index  Characters
+// 0  [0..25]   [65..90]   +65        0  ABCDEFGHIJKLMNOPQRSTUVWXYZ
+// 1  [26..51]  [97..122]  +71        1  abcdefghijklmnopqrstuvwxyz
+// 2  [52..61]  [48..57]    -4  [2..11]  0123456789
+// 3  [62]      [43]       -19       12  +
+// 4  [63]      [47]       -16       13  /
 var encodeStdLut = [16]byte{65, 71, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 237, 240, 0, 0}
+
+// A lookup table containing the absolute offsets for all ranges for URL encoding.
+// Translate values 0..63 to the Base64 alphabet. There are five sets:
+// #  From      To         Abs    Index  Characters
+// 0  [0..25]   [65..90]   +65        0  ABCDEFGHIJKLMNOPQRSTUVWXYZ
+// 1  [26..51]  [97..122]  +71        1  abcdefghijklmnopqrstuvwxyz
+// 2  [52..61]  [48..57]    -4  [2..11]  0123456789
+// 3  [62]      [45]       -17       12  -
+// 4  [63]      [95]       +32       13  _
 var encodeURLLut = [16]byte{65, 71, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 239, 32, 0, 0}
 
 // NewEncoding returns a new padded Encoding defined by the given alphabet,
@@ -68,7 +85,7 @@ func NewEncoding(encoder string) *Encoding {
 		e.lut = &encodeURLLut
 	} else if encoder == encodeStd {
 		e.lut = &encodeStdLut
-	}
+	}	
 	return e
 }
 
