@@ -2,6 +2,7 @@
 // https://github.com/aklomp/base64/blob/master/lib/arch/ssse3/enc_loop.c
 // https://github.com/aklomp/base64/blob/master/lib/arch/ssse3/dec_loop.c
 // https://gist.github.com/emmansun/c0f174a614a005f80f51b033500fd7fc
+// Faster Base64 Encoding and Decoding using AVX2 Instructions
 //go:build amd64 && !purego
 
 #include "textflag.h"
@@ -89,9 +90,9 @@ DATA dec_reshuffle_const1<>+0x00(SB)/8, $0x0001100000011000
 DATA dec_reshuffle_const1<>+0x08(SB)/8, $0x0001100000011000
 GLOBL dec_reshuffle_const1<>(SB), (NOPTR+RODATA), $16
 
-DATA dec_reshuffle_const2<>+0x00(SB)/8, $0x090A040506000102
-DATA dec_reshuffle_const2<>+0x08(SB)/8, $0xFFFFFFFF0C0D0E08
-GLOBL dec_reshuffle_const2<>(SB), (NOPTR+RODATA), $16
+DATA dec_reshuffle_mask<>+0x00(SB)/8, $0x090A040506000102
+DATA dec_reshuffle_mask<>+0x08(SB)/8, $0xFFFFFFFF0C0D0E08
+GLOBL dec_reshuffle_mask<>(SB), (NOPTR+RODATA), $16
 
 // Requires SSSE3
 #define SSE_ENC(in_out, lut, tmp1, tmp2) \
@@ -111,17 +112,17 @@ GLOBL dec_reshuffle_const2<>(SB), (NOPTR+RODATA), $16
 	\ // 0000hhhh II000000 GGGGGG00 00000000
 	\ // 0000eeee FF000000 DDDDDD00 00000000
 	\ // 0000bbbb CC000000 AAAAAA00 00000000	
-	PMULHUW mulhi_const<>(SB), tmp1;               \
+	PMULHUW mulhi_const<>(SB), tmp1;               \ // shift right high 16 bits by 6 and low 16 bits by 10 bits
 	\ // 00000000 00kkkkLL 00000000 00JJJJJJ
 	\ // 00000000 00hhhhII 00000000 00GGGGGG
 	\ // 00000000 00eeeeFF 00000000 00DDDDDD
-	\ // 00000000 00bbbbCC 00000000 00AAAAAA	
+	\ // 00000000 00bbbbCC 00000000 00AAAAAA	 
 	PAND mullo_mask<>(SB), in_out;                 \
 	\ // 00000000 00llllll 000000jj KKKK0000
 	\ // 00000000 00iiiiii 000000gg HHHH0000
 	\ // 00000000 00ffffff 000000dd EEEE0000
 	\ // 00000000 00cccccc 000000aa BBBB0000	
-	PMULLW mullo_const<>(SB), in_out;              \
+	PMULLW mullo_const<>(SB), in_out;              \ // shift left high 16 bits by 8 bits, and low 16 bits by 4 bits
 	\ // 00llllll 00000000 00jjKKKK 00000000
 	\ // 00iiiiii 00000000 00ggHHHH 00000000
 	\ // 00ffffff 00000000 00ddEEEE 00000000
@@ -364,26 +365,26 @@ avx2_done:
 // HHHHhhhh GGGGGGgg FFffffff EEEEeeee
 // DDDDDDdd CCcccccc BBBBbbbb AAAAAAaa
 #define SSE_DECODE_RESHUFFLE(in_out) \
-	PMADDUBSW dec_reshuffle_const0<>(SB), in_out;  \ // merge ab and bc
+	PMADDUBSW dec_reshuffle_const0<>(SB), in_out;  \ // swap and merge adjacent 6-bit fields
 	\ // 0000kkkk LLllllll 0000JJJJ JJjjKKKK
 	\ // 0000hhhh IIiiiiii 0000GGGG GGggHHHH
 	\ // 0000eeee FFffffff 0000DDDD DDddEEEE
 	\ // 0000bbbb CCcccccc 0000AAAA AAaaBBBB	
-	PMADDWL dec_reshuffle_const1<>(SB), in_out;  \
+	PMADDWL dec_reshuffle_const1<>(SB), in_out;    \ // swap and merge 12-bit words into a 24-bit word
 	\ // 00000000 JJJJJJjj KKKKkkkk LLllllll
 	\ // 00000000 GGGGGGgg HHHHhhhh IIiiiiii
 	\ // 00000000 DDDDDDdd EEEEeeee FFffffff
 	\ // 00000000 AAAAAAaa BBBBbbbb CCcccccc	
-	PSHUFB dec_reshuffle_const2<>(SB), in_out
+	PSHUFB dec_reshuffle_mask<>(SB), in_out
 
 #define AVX_DECODE_RESHUFFLE(in_out) \
-	VPMADDUBSW dec_reshuffle_const0<>(SB), in_out, in_out;  \
-	VPMADDWD dec_reshuffle_const1<>(SB), in_out, in_out;    \
-	VPSHUFB dec_reshuffle_const2<>(SB), in_out, in_out
+	VPMADDUBSW dec_reshuffle_const0<>(SB), in_out, in_out;  \ // swap and merge adjacent 6-bit fields
+	VPMADDWD dec_reshuffle_const1<>(SB), in_out, in_out;    \ // swap and merge 12-bit words into a 24-bit word
+	VPSHUFB dec_reshuffle_mask<>(SB), in_out, in_out
 
 #define AVX2_DECODE_RESHUFFLE(in_out, mask0, mask1, mask2) \
-	VPMADDUBSW mask0, in_out, in_out;  \
-	VPMADDWD mask1, in_out, in_out;    \
+	VPMADDUBSW mask0, in_out, in_out;  \ // swap and merge adjacent 6-bit fields
+	VPMADDWD mask1, in_out, in_out;    \ // swap and merge 12-bit words into a 24-bit word
 	VPSHUFB mask2, in_out, in_out
 
 //func decodeStdSIMD(dst, src []byte) int
@@ -477,7 +478,7 @@ avx2:
 	VBROADCASTI128 stddec_lut_roll<>(SB), Y12 // lut_lo
 	VBROADCASTI128 dec_reshuffle_const0<>(SB), Y6
 	VBROADCASTI128 dec_reshuffle_const1<>(SB), Y7
-	VBROADCASTI128 dec_reshuffle_const2<>(SB), Y8
+	VBROADCASTI128 dec_reshuffle_mask<>(SB), Y8
 
 avx2_loop:
 	CMPQ CX, $40
@@ -625,7 +626,7 @@ avx2:
 	VBROADCASTI128 urldec_lut_roll<>(SB), Y12 // lut_lo
 	VBROADCASTI128 dec_reshuffle_const0<>(SB), Y6
 	VBROADCASTI128 dec_reshuffle_const1<>(SB), Y7
-	VBROADCASTI128 dec_reshuffle_const2<>(SB), Y8
+	VBROADCASTI128 dec_reshuffle_mask<>(SB), Y8
 	VBROADCASTI128 url_const_5e<>(SB), Y13
 
 avx2_loop:
