@@ -86,7 +86,7 @@ func NewEncoding(encoder string) *Encoding {
 		e.lut = &encodeURLLut
 	} else if encoder == encodeStd {
 		e.lut = &encodeStdLut
-	}	
+	}
 	return e
 }
 
@@ -143,7 +143,7 @@ var RawURLEncoding = URLEncoding.WithPadding(NoPadding)
  * Encoder
  */
 
- func encodeGeneric(enc *Encoding, dst, src []byte) {
+func encodeGeneric(enc *Encoding, dst, src []byte) {
 	// enc is a pointer receiver, so the use of enc.encode within the hot
 	// loop below means a nil check at every operation. Lift that nil check
 	// outside of the loop to speed up the encoder.
@@ -189,7 +189,7 @@ var RawURLEncoding = URLEncoding.WithPadding(NoPadding)
 			dst[di+3] = byte(enc.padChar)
 		}
 	}
- }
+}
 
 // Encode encodes src using the encoding enc, writing
 // EncodedLen(len(src)) bytes to dst.
@@ -206,7 +206,11 @@ func (enc *Encoding) Encode(dst, src []byte) {
 
 // EncodeToString returns the base64 encoding of src.
 func (enc *Encoding) EncodeToString(src []byte) string {
-	buf := make([]byte, enc.EncodedLen(len(src)))
+	srcLen := len(src)
+	if srcLen == 0 {
+		return ""
+	}
+	buf := make([]byte, enc.EncodedLen(srcLen))
 	enc.Encode(buf, src)
 	return *(*string)(unsafe.Pointer(&buf))
 }
@@ -412,8 +416,13 @@ func (enc *Encoding) decodeQuantum(dst, src []byte, si int) (nsi, n int, err err
 
 // DecodeString returns the bytes represented by the base64 string s.
 func (enc *Encoding) DecodeString(s string) ([]byte, error) {
-	dbuf := make([]byte, enc.DecodedLen(len(s)))
-	n, err := enc.Decode(dbuf, []byte(s))
+	srcLen := len(s)
+	if srcLen == 0 {
+		return nil, nil
+	}
+	dbuf := make([]byte, enc.DecodedLen(srcLen))
+	d := *(*[]byte)(unsafe.Pointer(&s))
+	n, err := enc.Decode(dbuf, d)
 	return dbuf[:n], err
 }
 
