@@ -207,7 +207,7 @@ func (enc *Encoding) Encode(dst, src []byte) {
 func (enc *Encoding) EncodeToString(src []byte) string {
 	buf := make([]byte, enc.EncodedLen(len(src)))
 	enc.Encode(buf, src)
-	return string(buf)
+	return *(*string)(unsafe.Pointer(&buf))
 }
 
 type encoder struct {
