@@ -421,7 +421,9 @@ func (enc *Encoding) DecodeString(s string) ([]byte, error) {
 		return nil, nil
 	}
 	dbuf := make([]byte, enc.DecodedLen(srcLen))
-	d := *(*[]byte)(unsafe.Pointer(&s))
+	x := (*[2]uintptr)(unsafe.Pointer(&s))
+    h := [3]uintptr{x[0], x[1], x[1]}
+	d := *(*[]byte)(unsafe.Pointer(&h))
 	n, err := enc.Decode(dbuf, d)
 	return dbuf[:n], err
 }
