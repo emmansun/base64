@@ -188,22 +188,22 @@ TEXT ·encodeSIMD(SB),NOSPLIT,$0
 	XORQ SI, SI
 
 loop:
-	CMPQ CX, $16
-	JB done
+		CMPQ CX, $16
+		JB done
 
-	// enc reshuffle
-	MOVOU (BX), X0
+		// enc reshuffle
+		MOVOU (BX), X0
 	
-	SSE_ENC(X0, X3, X1, X2)
+		SSE_ENC(X0, X3, X1, X2)
 
-	// store encoded
-	MOVOU X0, (AX)(SI*1) 
+		// store encoded
+		MOVOU X0, (AX)(SI*1) 
 
-	ADDQ $16, SI
-	SUBQ $12, CX
+		ADDQ $16, SI
+		SUBQ $12, CX
 
-	LEAQ 12(BX), BX	
-	JMP loop
+		LEAQ 12(BX), BX	
+		JMP loop
 
 done:
 	MOVQ SI, ret+56(FP)
@@ -214,22 +214,22 @@ avx:
 	XORQ SI, SI
 
 avx_loop:
-	CMPQ CX, $16
-	JB avx_done
+		CMPQ CX, $16
+		JB avx_done
 
-	// load data
-	VMOVDQU (BX), X0
+		// load data
+		VMOVDQU (BX), X0
 
-	AVX_ENC(X0, X3, X1, X2)
+		AVX_ENC(X0, X3, X1, X2)
 
-	// store encoded
-	VMOVDQU X0, (AX)(SI*1) 
+		// store encoded
+		VMOVDQU X0, (AX)(SI*1) 
 
-	ADDQ $16, SI
-	SUBQ $12, CX
+		ADDQ $16, SI
+		SUBQ $12, CX
 
-	LEAQ 12(BX), BX	
-	JMP avx_loop
+		LEAQ 12(BX), BX	
+		JMP avx_loop
 
 avx_done:
 	MOVQ SI, ret+56(FP)
@@ -246,9 +246,9 @@ avx2:
 	VBROADCASTI128 (SI), Y13
 	XORQ SI, SI
 
-avx2_first:
+avx2_head:
 	CMPQ CX, $28
-	JB avx2_one
+	JB avx2_tail
 
 	// load data, bytes MSB to LSB:
 	// 0 0 0 0 x w v u t s r q p o n m
@@ -272,32 +272,32 @@ avx2_first:
 
 	LEAQ 24(BX), BX	
 
-avx2_loop_28:
-	CMPQ CX, $28
-	JB avx2_one
+avx2_loop:
+		CMPQ CX, $28
+		JB avx2_tail
 
-	// load data, bytes MSB to LSB:
-	// 0 0 0 0 x w v u t s r q p o n m
-	// l k j i h g f e d c b a 0 0 0 0	
-	VMOVDQU -4(BX), Y0
+		// load data, bytes MSB to LSB:
+		// 0 0 0 0 x w v u t s r q p o n m
+		// l k j i h g f e d c b a 0 0 0 0	
+		VMOVDQU -4(BX), Y0
 
-	// enc reshuffle
-	VPSHUFB reshuffle_mask32<>(SB), Y0, Y0
-	AVX2_ENC_RESUFFLE(Y0, Y1, Y7, Y8, Y9, Y10)
+		// enc reshuffle
+		VPSHUFB reshuffle_mask32<>(SB), Y0, Y0
+		AVX2_ENC_RESUFFLE(Y0, Y1, Y7, Y8, Y9, Y10)
 
-	// enc translate
-	AVX2_ENC_TRANSLATE(Y0, Y12, Y11, Y13, Y1, Y2)
+		// enc translate
+		AVX2_ENC_TRANSLATE(Y0, Y12, Y11, Y13, Y1, Y2)
 
-	// store encoded
-	VMOVDQU Y0, (AX)(SI*1) 
+		// store encoded
+		VMOVDQU Y0, (AX)(SI*1) 
 
-	ADDQ $32, SI
-	SUBQ $24, CX
+		ADDQ $32, SI
+		SUBQ $24, CX
 
-	LEAQ 24(BX), BX	
-	JMP avx2_loop_28
+		LEAQ 24(BX), BX	
+		JMP avx2_loop
 
-avx2_one:
+avx2_tail:
 	CMPQ CX, $16
 	JB avx2_done
 
@@ -402,34 +402,34 @@ TEXT ·decodeStdSIMD(SB),NOSPLIT,$0
 	PXOR X12, X12
 
 loop:
-	CMPQ CX, $24
-	JB done
+		CMPQ CX, $24
+		JB done
 
-	// load data
-	MOVOU (BX), X0
+		// load data
+		MOVOU (BX), X0
 
-	// validate
-	MOVOU stddec_lut_hi<>(SB), X10 // lut_hi
-	MOVOU stddec_lut_lo<>(SB), X11 // lut_lo
-	SSE_DECODE_VALIDATE(X0, X1, X2, X10, X11, X12, SI)
-	CMPQ SI, $0
-	JNE done
+		// validate
+		MOVOU stddec_lut_hi<>(SB), X10 // lut_hi
+		MOVOU stddec_lut_lo<>(SB), X11 // lut_lo
+		SSE_DECODE_VALIDATE(X0, X1, X2, X10, X11, X12, SI)
+		CMPQ SI, $0
+		JNE done
 
-	// translate
-	MOVOU nibble_mask<>(SB), X2
-	PCMPEQB X0, X2                  // compare 0x2F with in
-	PADDB X2, X1                    // add eq_2F with hi_nibbles
-	MOVOU stddec_lut_roll<>(SB), X2
-	PSHUFB X1, X2                   // shuffle lut roll
-	PADDB X2, X0                    // Now simply add the delta values to the input
+		// translate
+		MOVOU nibble_mask<>(SB), X2
+		PCMPEQB X0, X2                  // compare 0x2F with in
+		PADDB X2, X1                    // add eq_2F with hi_nibbles
+		MOVOU stddec_lut_roll<>(SB), X2
+		PSHUFB X1, X2                   // shuffle lut roll
+		PADDB X2, X0                    // Now simply add the delta values to the input
 
-	SSE_DECODE_RESHUFFLE(X0)
-	MOVOU X0, (AX)
+		SSE_DECODE_RESHUFFLE(X0)
+		MOVOU X0, (AX)
 
-	SUBQ $16, CX
-	LEAQ 12(AX), AX
-	LEAQ 16(BX), BX
-	JMP loop
+		SUBQ $16, CX
+		LEAQ 12(AX), AX
+		LEAQ 16(BX), BX
+		JMP loop
 
 done:
 	MOVQ CX, ret+48(FP)
@@ -442,30 +442,30 @@ avx:
 	VPXOR X12, X12, X12
 
 avx_loop:
-	CMPQ CX, $24
-	JB avx_done
+		CMPQ CX, $24
+		JB avx_done
 
-	// load data
-	VMOVDQU (BX), X0
+		// load data
+		VMOVDQU (BX), X0
 
-	// valiate
-	AVX_DECODE_VALIDATE(X0, X1, X2, X3, X10, X11, X12, SI)
-	CMPQ SI, $0
-	JNE avx_done
+		// valiate
+		AVX_DECODE_VALIDATE(X0, X1, X2, X3, X10, X11, X12, SI)
+		CMPQ SI, $0
+		JNE avx_done
 
-	// translate
-	VPCMPEQB nibble_mask<>(SB), X0, X2 // compare 0x2F with in
-	VPADDB X2, X1, X1                  // add eq_2F with hi_nibbles
-	VPSHUFB X1, X13, X2                // shuffle lut roll
-	VPADDB X2, X0, X0                  // Now simply add the delta values to the input
+		// translate
+		VPCMPEQB nibble_mask<>(SB), X0, X2 // compare 0x2F with in
+		VPADDB X2, X1, X1                  // add eq_2F with hi_nibbles
+		VPSHUFB X1, X13, X2                // shuffle lut roll
+		VPADDB X2, X0, X0                  // Now simply add the delta values to the input
 
-	AVX_DECODE_RESHUFFLE(X0)
-	VMOVDQU X0, (AX)
+		AVX_DECODE_RESHUFFLE(X0)
+		VMOVDQU X0, (AX)
 
-	SUBQ $16, CX
-	LEAQ 12(AX), AX
-	LEAQ 16(BX), BX
-	JMP avx_loop
+		SUBQ $16, CX
+		LEAQ 12(AX), AX
+		LEAQ 16(BX), BX
+		JMP avx_loop
 
 avx_done:
 	MOVQ CX, ret+48(FP)
@@ -481,34 +481,34 @@ avx2:
 	VBROADCASTI128 dec_reshuffle_mask<>(SB), Y8
 
 avx2_loop:
-	CMPQ CX, $40
-	JB avx2_one
+		CMPQ CX, $40
+		JB avx2_tail
 
-	// load data	
-	VMOVDQU (BX), Y0
+		// load data	
+		VMOVDQU (BX), Y0
 
-	// validate
-	AVX2_DECODE_HI_LO(Y0, Y1, Y3, Y4, Y9, Y10, Y11)
-	VPTEST Y3, Y4
-	JNZ avx2_done
+		// validate
+		AVX2_DECODE_HI_LO(Y0, Y1, Y3, Y4, Y9, Y10, Y11)
+		VPTEST Y3, Y4
+		JNZ avx2_done
 
-	// translate
-	VPCMPEQB Y9, Y0, Y2 // compare 0x2F with in
-	VPADDB Y2, Y1, Y1   // add eq_2F with hi_nibbles
-	VPSHUFB Y1, Y12, Y2 // shuffle lut roll
-	VPADDB Y2, Y0, Y0   // Now simply add the delta values to the input
+		// translate
+		VPCMPEQB Y9, Y0, Y2 // compare 0x2F with in
+		VPADDB Y2, Y1, Y1   // add eq_2F with hi_nibbles
+		VPSHUFB Y1, Y12, Y2 // shuffle lut roll
+		VPADDB Y2, Y0, Y0   // Now simply add the delta values to the input
 
-	AVX2_DECODE_RESHUFFLE(Y0, Y6, Y7, Y8)
-	VEXTRACTI128 $1, Y0, X1
-	VMOVDQU X0, (AX)
-	VMOVDQU X1, 12(AX)
+		AVX2_DECODE_RESHUFFLE(Y0, Y6, Y7, Y8)
+		VEXTRACTI128 $1, Y0, X1
+		VMOVDQU X0, (AX)
+		VMOVDQU X1, 12(AX)
 	
-	SUBQ $32, CX
-	LEAQ 24(AX), AX
-	LEAQ 32(BX), BX
-	JMP avx2_loop
+		SUBQ $32, CX
+		LEAQ 24(AX), AX
+		LEAQ 32(BX), BX
+		JMP avx2_loop
 
-avx2_one:
+avx2_tail:
 	CMPQ CX, $24
 	JB avx2_done
 
@@ -550,34 +550,34 @@ TEXT ·decodeUrlSIMD(SB),NOSPLIT,$0
 	PXOR X12, X12
 
 loop:
-	CMPQ CX, $24
-	JB done
+		CMPQ CX, $24
+		JB done
 
-	// load data
-	MOVOU (BX), X0
+		// load data
+		MOVOU (BX), X0
 
-	// validate
-	MOVOU urldec_lut_hi<>(SB), X10 // lut_hi
-	MOVOU urldec_lut_lo<>(SB), X11 // lut_lo
-	SSE_DECODE_VALIDATE(X0, X1, X2, X10, X11, X12, SI)
-	CMPQ SI, $0
-	JNE done
+		// validate
+		MOVOU urldec_lut_hi<>(SB), X10 // lut_hi
+		MOVOU urldec_lut_lo<>(SB), X11 // lut_lo
+		SSE_DECODE_VALIDATE(X0, X1, X2, X10, X11, X12, SI)
+		CMPQ SI, $0
+		JNE done
 
-	// translate
-	MOVOU X0, X2
-	PCMPGTB url_const_5e<>(SB), X2 // compare 0x5E with in
-	PSUBB X2, X1                  // sub gt_5E with hi_nibbles
-	MOVOU urldec_lut_roll<>(SB), X2
-	PSHUFB X1, X2                 // shuffle lut roll
-	PADDB X2, X0                  // Now simply add the delta values to the input
+		// translate
+		MOVOU X0, X2
+		PCMPGTB url_const_5e<>(SB), X2 // compare 0x5E with in
+		PSUBB X2, X1                  // sub gt_5E with hi_nibbles
+		MOVOU urldec_lut_roll<>(SB), X2
+		PSHUFB X1, X2                 // shuffle lut roll
+		PADDB X2, X0                  // Now simply add the delta values to the input
 
-	SSE_DECODE_RESHUFFLE(X0)
-	MOVOU X0, (AX)
+		SSE_DECODE_RESHUFFLE(X0)
+		MOVOU X0, (AX)
 
-	SUBQ $16, CX
-	LEAQ 12(AX), AX
-	LEAQ 16(BX), BX
-	JMP loop
+		SUBQ $16, CX
+		LEAQ 12(AX), AX
+		LEAQ 16(BX), BX
+		JMP loop
 
 done:
 	MOVQ CX, ret+48(FP)
@@ -590,30 +590,30 @@ avx:
 	VPXOR X12, X12, X12
 
 avx_loop:
-	CMPQ CX, $24
-	JB avx_done
+		CMPQ CX, $24
+		JB avx_done
 
-	// load data
-	VMOVDQU (BX), X0
+		// load data
+		VMOVDQU (BX), X0
 
-	// validate
-	AVX_DECODE_VALIDATE(X0, X1, X2, X3, X10, X11, X12, SI)
-	CMPQ SI, $0
-	JNE avx_done
+		// validate
+		AVX_DECODE_VALIDATE(X0, X1, X2, X3, X10, X11, X12, SI)
+		CMPQ SI, $0
+		JNE avx_done
 
-	// translate
-	VPCMPGTB url_const_5e<>(SB), X0, X2 // compare 0x5E with in
-	VPSUBB X2, X1, X1                  // sub gt_5E with hi_nibbles
-	VPSHUFB X1, X13, X2                // shuffle lut roll
-	VPADDB X2, X0, X0                  // Now simply add the delta values to the input
+		// translate
+		VPCMPGTB url_const_5e<>(SB), X0, X2 // compare 0x5E with in
+		VPSUBB X2, X1, X1                  // sub gt_5E with hi_nibbles
+		VPSHUFB X1, X13, X2                // shuffle lut roll
+		VPADDB X2, X0, X0                  // Now simply add the delta values to the input
 
-	AVX_DECODE_RESHUFFLE(X0)
-	VMOVDQU X0, (AX)
+		AVX_DECODE_RESHUFFLE(X0)
+		VMOVDQU X0, (AX)
 
-	SUBQ $16, CX
-	LEAQ 12(AX), AX
-	LEAQ 16(BX), BX
-	JMP avx_loop
+		SUBQ $16, CX
+		LEAQ 12(AX), AX
+		LEAQ 16(BX), BX
+		JMP avx_loop
 
 avx_done:
 	MOVQ CX, ret+48(FP)
@@ -630,34 +630,34 @@ avx2:
 	VBROADCASTI128 url_const_5e<>(SB), Y13
 
 avx2_loop:
-	CMPQ CX, $40
-	JB avx2_one
+		CMPQ CX, $40
+		JB avx2_tail
 	
-	// load data
-	VMOVDQU (BX), Y0
+		// load data
+		VMOVDQU (BX), Y0
 
-	// validate
-	AVX2_DECODE_HI_LO(Y0, Y1, Y3, Y4, Y9, Y10, Y11)
-	VPTEST Y3, Y4
-	JNZ avx2_done
+		// validate
+		AVX2_DECODE_HI_LO(Y0, Y1, Y3, Y4, Y9, Y10, Y11)
+		VPTEST Y3, Y4
+		JNZ avx2_done
 
-	// translate
-	VPCMPGTB Y13, Y0, Y2 // compare 0x5E with in
-	VPSUBB Y2, Y1, Y1    // sub gt_5E with hi_nibbles
-	VPSHUFB Y1, Y12, Y2  // shuffle lut roll
-	VPADDB Y2, Y0, Y0    // Now simply add the delta values to the input
+		// translate
+		VPCMPGTB Y13, Y0, Y2 // compare 0x5E with in
+		VPSUBB Y2, Y1, Y1    // sub gt_5E with hi_nibbles
+		VPSHUFB Y1, Y12, Y2  // shuffle lut roll
+		VPADDB Y2, Y0, Y0    // Now simply add the delta values to the input
 
-	AVX2_DECODE_RESHUFFLE(Y0, Y6, Y7, Y8)
-	VEXTRACTI128 $1, Y0, X1
-	VMOVDQU X0, (AX)
-	VMOVDQU X1, 12(AX)
+		AVX2_DECODE_RESHUFFLE(Y0, Y6, Y7, Y8)
+		VEXTRACTI128 $1, Y0, X1
+		VMOVDQU X0, (AX)
+		VMOVDQU X1, 12(AX)
 	
-	SUBQ $32, CX
-	LEAQ 24(AX), AX
-	LEAQ 32(BX), BX
-	JMP avx2_loop
+		SUBQ $32, CX
+		LEAQ 24(AX), AX
+		LEAQ 32(BX), BX
+		JMP avx2_loop
 
-avx2_one:
+avx2_tail:
 	CMPQ CX, $24
 	JB avx2_done
 
