@@ -9,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"reflect"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -111,8 +113,9 @@ func TestEncode(t *testing.T) {
 	for _, p := range pairs {
 		for _, tt := range encodingTests {
 			got := tt.enc.EncodeToString([]byte(p.decoded))
-			testEqual(t, "Encode(%q) = %q, want %q", p.decoded,
-				got, tt.conv(p.encoded))
+			testEqual(t, "Encode(%q) = %q, want %q", p.decoded, got, tt.conv(p.encoded))
+			dst := tt.enc.AppendEncode([]byte("lead"), []byte(p.decoded))
+			testEqual(t, `AppendEncode("lead", %q) = %q, want %q`, p.decoded, string(dst), "lead"+tt.conv(p.encoded))
 		}
 	}
 }
@@ -160,10 +163,20 @@ func TestDecode(t *testing.T) {
 			dbuf, err = tt.enc.DecodeString(encoded)
 			testEqual(t, "DecodeString(%q) = error %v, want %v", encoded, err, error(nil))
 			testEqual(t, "DecodeString(%q) = %q, want %q", encoded, string(dbuf), p.decoded)
+
+			dst, err := tt.enc.AppendDecode([]byte("lead"), []byte(encoded))
+			testEqual(t, "AppendDecode(%q) = error %v, want %v", p.encoded, err, error(nil))
+			testEqual(t, `AppendDecode("lead", %q) = %q, want %q`, p.encoded, string(dst), "lead"+p.decoded)
+
+			dst2, err := tt.enc.AppendDecode(dst[:0:len(p.decoded)], []byte(encoded))
+			testEqual(t, "AppendDecode(%q) = error %v, want %v", p.encoded, err, error(nil))
+			testEqual(t, `AppendDecode("", %q) = %q, want %q`, p.encoded, string(dst2), p.decoded)
+			if len(dst) > 0 && len(dst2) > 0 && &dst[0] != &dst2[0] {
+				t.Errorf("unexpected capacity growth: got %d, want %d", cap(dst2), cap(dst))
+			}
 		}
 	}
 }
-
 func TestDecoder(t *testing.T) {
 	for _, p := range pairs {
 		decoder := NewDecoder(StdEncoding, strings.NewReader(p.encoded))
@@ -262,11 +275,12 @@ func TestDecodeBounds(t *testing.T) {
 }
 
 func TestEncodedLen(t *testing.T) {
-	for _, tt := range []struct {
+	type test struct {
 		enc  *Encoding
 		n    int
-		want int
-	}{
+		want int64
+	}
+	tests := []test{
 		{RawStdEncoding, 0, 0},
 		{RawStdEncoding, 1, 2},
 		{RawStdEncoding, 2, 3},
@@ -278,19 +292,30 @@ func TestEncodedLen(t *testing.T) {
 		{StdEncoding, 3, 4},
 		{StdEncoding, 4, 8},
 		{StdEncoding, 7, 12},
-	} {
-		if got := tt.enc.EncodedLen(tt.n); got != tt.want {
+	}
+	// check overflow
+	switch strconv.IntSize {
+	case 32:
+		tests = append(tests, test{RawStdEncoding, (math.MaxInt-5)/8 + 1, 357913942})
+		tests = append(tests, test{RawStdEncoding, math.MaxInt/4*3 + 2, math.MaxInt})
+	case 64:
+		tests = append(tests, test{RawStdEncoding, (math.MaxInt-5)/8 + 1, 1537228672809129302})
+		tests = append(tests, test{RawStdEncoding, math.MaxInt/4*3 + 2, math.MaxInt})
+	}
+	for _, tt := range tests {
+		if got := tt.enc.EncodedLen(tt.n); int64(got) != tt.want {
 			t.Errorf("EncodedLen(%d): got %d, want %d", tt.n, got, tt.want)
 		}
 	}
 }
 
 func TestDecodedLen(t *testing.T) {
-	for _, tt := range []struct {
+	type test struct {
 		enc  *Encoding
 		n    int
-		want int
-	}{
+		want int64
+	}
+	tests := []test{
 		{RawStdEncoding, 0, 0},
 		{RawStdEncoding, 2, 1},
 		{RawStdEncoding, 3, 2},
@@ -299,8 +324,18 @@ func TestDecodedLen(t *testing.T) {
 		{StdEncoding, 0, 0},
 		{StdEncoding, 4, 3},
 		{StdEncoding, 8, 6},
-	} {
-		if got := tt.enc.DecodedLen(tt.n); got != tt.want {
+	}
+	// check overflow
+	switch strconv.IntSize {
+	case 32:
+		tests = append(tests, test{RawStdEncoding, math.MaxInt/6 + 1, 268435456})
+		tests = append(tests, test{RawStdEncoding, math.MaxInt, 1610612735})
+	case 64:
+		tests = append(tests, test{RawStdEncoding, math.MaxInt/6 + 1, 1152921504606846976})
+		tests = append(tests, test{RawStdEncoding, math.MaxInt, 6917529027641081855})
+	}
+	for _, tt := range tests {
+		if got := tt.enc.DecodedLen(tt.n); int64(got) != tt.want {
 			t.Errorf("DecodedLen(%d): got %d, want %d", tt.n, got, tt.want)
 		}
 	}
@@ -488,10 +523,19 @@ func TestDecoderIssue15656(t *testing.T) {
 }
 
 func BenchmarkEncodeToString(b *testing.B) {
-	data := make([]byte, 8192)
-	b.SetBytes(int64(len(data)))
-	for i := 0; i < b.N; i++ {
-		StdEncoding.EncodeToString(data)
+	sizes := []int{12, 768, 8192}
+	benchFunc := func(b *testing.B, benchSize int) {
+		data := make([]byte, benchSize)
+		b.SetBytes(int64(len(data)))
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			StdEncoding.EncodeToString(data)
+		}
+	}
+	for _, size := range sizes {
+		b.Run(fmt.Sprintf("%d", size), func(b *testing.B) {
+			benchFunc(b, size)
+		})
 	}
 }
 
