@@ -8,7 +8,6 @@ package base64
 import (
 	"encoding/binary"
 	"io"
-	"slices"
 	"strconv"
 	"unsafe"
 )
@@ -228,11 +227,18 @@ func (enc *Encoding) Encode(dst, src []byte) {
 	encode(enc, dst, src)
 }
 
+func growByteSlice(s []byte, n int) []byte {
+	if n -= cap(s) - len(s); n > 0 {
+		s = append(s[:cap(s)], make([]byte, n)...)[:len(s)]
+	}
+	return s
+}
+
 // AppendEncode appends the base64 encoded src to dst
 // and returns the extended buffer.
 func (enc *Encoding) AppendEncode(dst, src []byte) []byte {
 	n := enc.EncodedLen(len(src))
-	dst = slices.Grow(dst, n)
+	dst = growByteSlice(dst, n)
 	enc.Encode(dst[len(dst):][:n], src)
 	return dst[:len(dst)+n]
 }
@@ -456,7 +462,8 @@ func (enc *Encoding) AppendDecode(dst, src []byte) ([]byte, error) {
 	}
 	n = decodedLen(n, NoPadding)
 
-	dst = slices.Grow(dst, n)
+	dst = growByteSlice(dst, n)
+
 	n, err := enc.Decode(dst[len(dst):][:n], src)
 	return dst[:len(dst)+n], err
 }
