@@ -6,8 +6,6 @@
 
 package base64
 
-import "fmt"
-
 //go:noescape
 func encodeAsm(dst, src []byte, lut *[16]byte) int
 
@@ -37,7 +35,6 @@ func decode(enc *Encoding, dst, src []byte) (int, error) {
 		} else if enc.lut == &encodeURLLut {
 			remain = decodeUrlAsm(dst, src)
 		}
-		fmt.Printf("total %d remain: %d\n", srcLen, remain)
 		if remain < srcLen {
 			// decoded by ASM
 			remain = srcLen - remain // remain is decoded length now
