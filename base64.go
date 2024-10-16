@@ -625,7 +625,8 @@ func decodeGeneric(enc *Encoding, dst, src []byte) (n int, err error) {
 
 // Decode decodes src using the encoding enc. It writes at most
 // [Encoding.DecodedLen](len(src)) bytes to dst and returns the number of bytes
-// written. If src contains invalid base64 data, it will return the
+// written. The caller must ensure that dst is large enough to hold all
+// the decoded data. If src contains invalid base64 data, it will return the
 // number of bytes successfully written and [CorruptInputError].
 // New line characters (\r and \n) are ignored.
 func (enc *Encoding) Decode(dst, src []byte) (int, error) {
