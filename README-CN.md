@@ -11,6 +11,13 @@
 ![GitHub go.mod Go version (branch)](https://img.shields.io/github/go-mod/go-version/emmansun/base64)
 [![Release](https://img.shields.io/github/release/emmansun/base64/all.svg)](https://github.com/emmansun/base64/releases)
 
+
+## 优化的架构
+- **AMD64** SSE/AVX/AVX2
+- **ARM64** NEON
+- **PPC64X**
+- **S390X**
+
 ## 性能
 关于性能，AMD64下的性能可以参考[English](README.md) 说明，ARM64下的性能请自行测试。另外需要说明的是，解码的时候，如果文本含有回车换行，当前实现没有优势。
 

@@ -11,6 +11,12 @@ Base64 with SIMD acceleration
 ![GitHub go.mod Go version (branch)](https://img.shields.io/github/go-mod/go-version/emmansun/base64)
 [![Release](https://img.shields.io/github/release/emmansun/base64/all.svg)](https://github.com/emmansun/base64/releases)
 
+## Optimized architectures
+- **AMD64** SSE/AVX/AVX2
+- **ARM64** NEON
+- **PPC64X**
+- **S390X**
+
 ## Benchmark
 **SDK vs. Purego**:
 ```
