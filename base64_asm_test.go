@@ -57,6 +57,15 @@ func TestStdDecodeAsm(t *testing.T) {
 	}
 }
 
+func TestStdDecodeAsmWithError(t *testing.T) {
+	dst := make([]byte, 16)
+	src := []byte("-YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts")
+	ret := decodeStdAsm(dst, src)
+	if ret != len(src) {
+		t.Errorf("should return original length")
+	}
+}
+
 func TestURLEncodeAsm(t *testing.T) {
 	pairs := []testpair{
 		{"!?$*&()'-=@~0000", "IT8kKiYoKSctPUB-"},
@@ -97,6 +106,15 @@ func TestUrlDecodeAsm(t *testing.T) {
 		if !bytes.Equal(dst, expected) {
 			t.Errorf("got %x, expected %x", dst, expected)
 		}
+	}
+}
+
+func TestUrlDecodeAsmWithError(t *testing.T) {
+	dst := make([]byte, 16)
+	src := []byte("IT8kKiYoKSctPUB/IT8kKiYoKSctPUB/")
+	ret := decodeUrlAsm(dst, src)
+	if ret != len(src) {
+		t.Errorf("should return original length")
 	}
 }
 
