@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD 3-Clause-style
 // license that can be found in the LICENSE file.
 
-//go:build (amd64 || ppc64 || ppc64le) && !purego
+//go:build (amd64 || ppc64 || ppc64le || s390x) && !purego
 
 package base64
 
