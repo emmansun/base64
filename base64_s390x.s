@@ -30,10 +30,11 @@ GLOBL base64_const<>(SB), (NOPTR+RODATA), $96
 #define RANGE0_END V7
 #define LUT V8
 #define ZERO V9
+#define NEG V10
 
-#define X0 V10
-#define X1 V11
-#define X2 V12
+#define X0 V11
+#define X1 V12
+#define X2 V13
 
 //func encodeAsm(dst, src []byte, lut *[16]byte) int
 TEXT ·encodeAsm(SB),NOSPLIT,$0
@@ -47,7 +48,9 @@ TEXT ·encodeAsm(SB),NOSPLIT,$0
 	VLM (R5), REV_BYTES, MULLO_CONST
 	VREPIB $0x33, RANGE1_END
 	VREPIB $0x19, RANGE0_END
+	VREPIB $0xff, NEG
 	VZERO ZERO
+
 
 	MOVD $0, R4
 loop:
@@ -62,8 +65,9 @@ loop:
 	VSB RANGE1_END, X0, X1
 	VMXB ZERO, X1, X1
 
-	VLR V0, V2
-	VECLB RANGE0_END, X2
+	VSB X0, RANGE0_END, X2
+	VMXB NEG, X2, X2
+	VMNB ZERO, X2, X2
 	//VMXB ZERO, X2, X2
 	//VAB X2, X1, X1
 
