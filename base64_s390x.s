@@ -89,9 +89,9 @@ loop:
 	RET
 
 #undef RESHUFFLE_MASK
-#undef SHIFT_RIGHT_MASK
+#undef MULHI_CONST
 #undef MULHI_MASK
-#undef SHIFT_LEFT_MASK
+#undef MULLO_CONST
 #undef MULLO_MASK
 #undef RANGE1_END
 #undef RANGE0_END
