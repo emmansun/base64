@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-func TestStdEncodeSIMD(t *testing.T) {
+func TestStdEncodeAsm(t *testing.T) {
 	pairs := []testpair{
 		{"abcdefghijkl0000", "YWJjZGVmZ2hpamts"},
 		{"\x2b\xf7\xcc\x27\x01\xfe\x43\x97\xb4\x9e\xbe\xed\x5a\xcc\x70\x90", "K/fMJwH+Q5e0nr7t"},
@@ -25,7 +25,7 @@ func TestStdEncodeSIMD(t *testing.T) {
 		expected := []byte(p.encoded)
 		dst := make([]byte, len(expected))
 
-		ret := encodeSIMD(dst, src, &encodeStdLut)
+		ret := encodeAsm(dst, src, &encodeStdLut)
 		if ret != len(expected) {
 			t.Errorf("should return %v, got %v", len(expected), ret)
 		}
@@ -36,7 +36,7 @@ func TestStdEncodeSIMD(t *testing.T) {
 	}
 }
 
-func TestStdDecodeSIMD(t *testing.T) {
+func TestStdDecodeAsm(t *testing.T) {
 	pairs := []testpair{
 		{"abcdefghijkl", "YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts"},
 		{"\x2b\xf7\xcc\x27\x01\xfe\x43\x97\xb4\x9e\xbe\xed", "K/fMJwH+Q5e0nr7tK/fMJwH+Q5e0nr7t"},
@@ -47,7 +47,7 @@ func TestStdDecodeSIMD(t *testing.T) {
 		src := []byte(p.encoded)
 		dst := make([]byte, len(expected))
 
-		ret := decodeStdSIMD(dst, src)
+		ret := decodeStdAsm(dst, src)
 		if ret == len(src) {
 			t.Errorf("should return decode")
 		}
@@ -57,7 +57,7 @@ func TestStdDecodeSIMD(t *testing.T) {
 	}
 }
 
-func TestURLEncodeSIMD(t *testing.T) {
+func TestURLEncodeAsm(t *testing.T) {
 	pairs := []testpair{
 		{"!?$*&()'-=@~0000", "IT8kKiYoKSctPUB-"},
 		{"\x2b\xf7\xcc\x27\x01\xfe\x43\x97\xb4\x9e\xbe\xed\x5a\xcc\x70\x90", "K_fMJwH-Q5e0nr7t"},
@@ -68,7 +68,7 @@ func TestURLEncodeSIMD(t *testing.T) {
 		expected := []byte(p.encoded)
 		dst := make([]byte, len(expected))
 
-		ret := encodeSIMD(dst, src, &encodeURLLut)
+		ret := encodeAsm(dst, src, &encodeURLLut)
 		if ret != len(expected) {
 			t.Errorf("should return %v", len(expected))
 		}
@@ -79,7 +79,7 @@ func TestURLEncodeSIMD(t *testing.T) {
 	}
 }
 
-func TestUrlDecodeSIMD(t *testing.T) {
+func TestUrlDecodeAsm(t *testing.T) {
 	pairs := []testpair{
 		{"!?$*&()'-=@~", "IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-"},
 		{"\x2b\xf7\xcc\x27\x01\xfe\x43\x97\xb4\x9e\xbe\xed", "K_fMJwH-Q5e0nr7tK_fMJwH-Q5e0nr7t"},
@@ -90,7 +90,7 @@ func TestUrlDecodeSIMD(t *testing.T) {
 		src := []byte(p.encoded)
 		dst := make([]byte, len(expected))
 
-		ret := decodeUrlSIMD(dst, src)
+		ret := decodeUrlAsm(dst, src)
 		if ret == len(src) {
 			t.Errorf("should return decode")
 		}
