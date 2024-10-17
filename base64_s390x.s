@@ -36,6 +36,13 @@ GLOBL base64_const<>(SB), (NOPTR+RODATA), $96
 #define X1 V12
 #define X2 V13
 
+// check the byte in src1 is greater than the byte in src2
+// mask is 0xFF (-1) for greater and 0x00 for others.
+#define VCGTB(src1, src2, mask) \
+	VSB src1, src2, mask        \
+	VMXB NEG, mask, mask        \ 
+	VMNB ZERO, mask, mask
+
 //func encodeAsm(dst, src []byte, lut *[16]byte) int
 TEXT ·encodeAsm(SB),NOSPLIT,$0
 	MOVD dst_base+0(FP), R1
@@ -65,9 +72,7 @@ loop:
 	VSB RANGE1_END, X0, X1
 	VMXB ZERO, X1, X1
 
-	VSB X0, RANGE0_END, X2
-	VMXB NEG, X2, X2
-	VMNB ZERO, X2, X2
+	VCGTB(X0, RANGE0_END, X2) // mask is 0xFF (-1) for range #[1..4] and 0x00 for range #0.
 	VSB X2, X1, X1
 
 	VPERM LUT, LUT, X1, X2
