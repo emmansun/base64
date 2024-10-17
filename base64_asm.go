@@ -2,9 +2,14 @@
 // Use of this source code is governed by a BSD 3-Clause-style
 // license that can be found in the LICENSE file.
 
-//go:build (ppc64 || ppc64le) && !purego
+//go:build (amd64 || ppc64 || ppc64le) && !purego
 
 package base64
+
+import "golang.org/x/sys/cpu"
+
+var useAVX2 = cpu.X86.HasAVX2
+var useAVX = cpu.X86.HasAVX
 
 //go:noescape
 func encodeAsm(dst, src []byte, lut *[16]byte) int
@@ -35,8 +40,9 @@ func decode(enc *Encoding, dst, src []byte) (int, error) {
 		} else if enc.lut == &encodeURLLut {
 			remain = decodeUrlAsm(dst, src)
 		}
+
 		if remain < srcLen {
-			// decoded by ASM
+			// decoded by SIMD
 			remain = srcLen - remain // remain is decoded length now
 			src = src[remain:]
 			dstStart := (remain / 4) * 3

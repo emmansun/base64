@@ -171,8 +171,8 @@ GLOBL dec_reshuffle_mask<>(SB), (NOPTR+RODATA), $16
 	VPSHUFB tmp1, lut, tmp1;                          \ // get offsets and add offsets to input value.
 	VPADDB tmp1, in_out, in_out
 
-//func encodeSIMD(dst, src []byte, lut *[16]byte) int
-TEXT ·encodeSIMD(SB),NOSPLIT,$0
+//func encodeAsm(dst, src []byte, lut *[16]byte) int
+TEXT ·encodeAsm(SB),NOSPLIT,$0
 	MOVQ dst_base+0(FP), AX
 	MOVQ src_base+24(FP), BX
 	MOVQ src_len+32(FP), CX
@@ -387,8 +387,8 @@ avx2_done:
 	VPMADDWD mask1, in_out, in_out;    \ // swap and merge 12-bit words into a 24-bit word
 	VPSHUFB mask2, in_out, in_out
 
-//func decodeStdSIMD(dst, src []byte) int
-TEXT ·decodeStdSIMD(SB),NOSPLIT,$0
+//func decodeStdAsm(dst, src []byte) int
+TEXT ·decodeStdAsm(SB),NOSPLIT,$0
 	MOVQ dst_base+0(FP), AX
 	MOVQ src_base+24(FP), BX
 	MOVQ src_len+32(FP), CX
@@ -535,8 +535,8 @@ avx2_done:
 	VZEROUPPER
 	RET
 
-//func decodeUrlSIMD(dst, src []byte) int
-TEXT ·decodeUrlSIMD(SB),NOSPLIT,$0
+//func decodeUrlAsmdst, src []byte) int
+TEXT ·decodeUrlAsm(SB),NOSPLIT,$0
 	MOVQ dst_base+0(FP), AX
 	MOVQ src_base+24(FP), BX
 	MOVQ src_len+32(FP), CX
