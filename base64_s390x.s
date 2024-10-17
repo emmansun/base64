@@ -206,8 +206,8 @@ TEXT ·decodeUrlAsm(SB),NOSPLIT,$0
 	MOVD src_base+24(FP), R2
 	MOVD src_len+32(FP), R3
 
-	MOVD $decode_const<>(SB), R4
-	VLM (R4), LUT_HI, RESHUFFLE_MASK
+	MOVD $decode_const<>+0x30(SB), R4
+	VLM (R4), RESHUFFLE_CONST0, LUT_ROLL
 	VREPIB $0xff, NEG
 	VREPIB $0x0f, NIBBLE_MASK
 	VREPIB $0x5e, DECODE_CONST
