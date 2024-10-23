@@ -11,8 +11,8 @@ DATA enc_const<>+0x10(SB)/8, $0x0FC0FC000FC0FC00 // mulhi mask
 DATA enc_const<>+0x18(SB)/8, $0x0FC0FC0FC0FC0FC0
 DATA enc_const<>+0x20(SB)/8, $0x003F03F0003F03F0 // mullo mask
 DATA enc_const<>+0x28(SB)/8, $0x003F03F0003F03F0
-DATA enc_const<>+0x30(SB)/8, $0x0f0e0b0a07060302 // high part of word
-DATA enc_const<>+0x38(SB)/8, $0x1f1e1b1a17161312
+DATA enc_const<>+0x30(SB)/8, $0x1f1e1b1a17161312 // high part of word
+DATA enc_const<>+0x38(SB)/8, $0x0f0e0b0a07060302
 GLOBL enc_const<>(SB), (NOPTR+RODATA), $64
 
 //func encodeAsm(dst, src []byte, lut *[64]byte) int
@@ -79,7 +79,7 @@ loop12:
 
 	WORD $0x2e61c182 // UMULL V1.H8, V12.H8, V2.H8
 	WORD $0x6e61c181 // UMULL2 V1.H8, V12.H8, V1.H8
-	VTBL V6.B16, [V2.B16, V1.B16], V1.B16
+	VTBL V6.B16, [V1.B16, V2.B16], V1.B16
 
 	VAND V0.B16, V5.B16, V0.B16
 	WORD $0x4e609ce0 // VMUL V0.H8, V7.H8, V0.H8
