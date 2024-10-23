@@ -8,7 +8,7 @@
 DATA enc_const<>+0x00(SB)/8, $0x0405030401020001 // reshufle mask
 DATA enc_const<>+0x08(SB)/8, $0x0a0b090a07080607
 DATA enc_const<>+0x10(SB)/8, $0x0FC0FC000FC0FC00 // mulhi mask
-DATA enc_const<>+0x18(SB)/8, $0x0FC0FC0FC0FC0FC0
+DATA enc_const<>+0x18(SB)/8, $0x0FC0FC000FC0FC00
 DATA enc_const<>+0x20(SB)/8, $0x003F03F0003F03F0 // mullo mask
 DATA enc_const<>+0x28(SB)/8, $0x003F03F0003F03F0
 DATA enc_const<>+0x30(SB)/8, $0x1f1e1b1a17161312 // high part of word
