@@ -30,7 +30,7 @@ TEXT ·encodeAsm(SB),NOSPLIT,$0
 
 loop48:
 	CMP $48, R2
-	BLT lessThan48
+	BLT done
 
 	// Move the input bits to where they need to be in the outputs. Except
 	// for the first output, the high two bits are not cleared.
