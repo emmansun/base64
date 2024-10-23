@@ -35,21 +35,24 @@ func TestStdEncodeSIMD(t *testing.T) {
 
 func TestStdDecodeSIMD(t *testing.T) {
 	pairs := []testpair{
+		{"abcdefghijkl", "YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts"},
+		{"\x2b\xf7\xcc\x27\x01\xfe\x43\x97\xb4\x9e\xbe\xed", "K/fMJwH+Q5e0nr7tK/fMJwH+Q5e0nr7t"},
+		{"abcdefghijklabcdefghijklabcdefghijkl", "YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts"},
 		{"abcdefghijklabcdefghijklabcdefghijklabcdefghijkl", "YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts"},
 		{"abcdefghijklabcdefghijklabcdefghijklabcdefghijkl", "YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamt="},
 		{"abcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijkl", "YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts"},
 	}
-	for _, p := range pairs {
+	for i, p := range pairs {
 		expected := []byte(p.decoded)
 		src := []byte(p.encoded)
 		dst := make([]byte, len(expected))
 
 		ret := decodeAsm(dst, src, &dencodeStdLut)
 		if ret == len(src) {
-			t.Fatal("should return decode")
+			t.Fatalf("case %v should return decode %v, got %v", i, len(src), ret)
 		}
 		if !bytes.Equal(dst, expected) {
-			t.Fatalf("got %x, expected %x", dst, expected)
+			t.Fatalf("case %v got %x, expected %x", i, dst, expected)
 		}
 	}
 }
@@ -58,7 +61,7 @@ func TestUrlEncodeSIMD(t *testing.T) {
 	pairs := []testpair{
 		{"!?$*&()'-=@~0000", "IT8kKiYoKSctPUB-"},
 		{"\x2b\xf7\xcc\x27\x01\xfe\x43\x97\xb4\x9e\xbe\xed\x5a\xcc\x70\x90", "K_fMJwH-Q5e0nr7t"},
-		{"!?$*&()'-=@~!?$*&()'-=@~0000", "IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-"},		
+		{"!?$*&()'-=@~!?$*&()'-=@~0000", "IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-"},
 		{"!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~", "IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-"},
 		{"!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~", "IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-"},
 	}
@@ -80,21 +83,24 @@ func TestUrlEncodeSIMD(t *testing.T) {
 
 func TestUrlDecodeSIMD(t *testing.T) {
 	pairs := []testpair{
+		{"!?$*&()'-=@~", "IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-"},
+		{"\x2b\xf7\xcc\x27\x01\xfe\x43\x97\xb4\x9e\xbe\xed", "K_fMJwH-Q5e0nr7tK_fMJwH-Q5e0nr7t"},
+		{"!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~", "IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-"},
 		{"!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~", "IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-"},
 		{"abcdefghijklabcdefghijklabcdefghijklabcdefghijkl", "YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamt="},
 		{"!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~", "IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-"},
 	}
-	for _, p := range pairs {
+	for i, p := range pairs {
 		expected := []byte(p.decoded)
 		src := []byte(p.encoded)
 		dst := make([]byte, len(expected))
 
 		ret := decodeAsm(dst, src, &dencodeUrlLut)
 		if ret == len(src) {
-			t.Fatal("should return decode")
+			t.Fatalf("case %v should return decode %v, got %v", i, len(src), ret)
 		}
 		if !bytes.Equal(dst, expected) {
-			t.Fatalf("got %x, expected %x", dst, expected)
+			t.Fatalf("case %v got %x, expected %x", i, dst, expected)
 		}
 	}
 }

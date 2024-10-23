@@ -41,7 +41,7 @@ func encode(enc *Encoding, dst, src []byte) {
 
 func decode(enc *Encoding, dst, src []byte) (int, error) {
 	srcLen := len(src)
-	if srcLen >= 64 {
+	if srcLen >= 24 {
 		remain := srcLen
 		if enc.lut == &encodeStdLut {
 			remain = decodeAsm(dst, src, &dencodeStdLut)
