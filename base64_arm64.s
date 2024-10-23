@@ -73,7 +73,7 @@ lessThan48:
 	VSHL $2, V7.S4, V12.S4 // mulhi constant
 
 loop12:
-	VLD1.P 12(R1), [V0.B16]
+	VLD1 (R1), [V0.B16]
 	VTBL V3.B16, [V0.B16], V0.B16 // shuffle bytes
 	VAND V4.B16, V0.B16, V1.B16   // AND mulhi mask
 
@@ -91,8 +91,9 @@ loop12:
 	VTBL V0.B16, [V8.B16, V9.B16, V10.B16, V11.B16], V0.B16
 	VST1.P [V0.B16], 16(R0)
 
-	SUB $12, R2
+	ADD $12, R1
 	ADD $16, R5
+	SUB $12, R2
 	CMP $16, R2
 	BGE loop12
 
