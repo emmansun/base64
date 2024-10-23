@@ -17,8 +17,8 @@ GLOBL enc_const<>(SB), (NOPTR+RODATA), $64
 
 DATA dec_const<>+0x00(SB)/8, $0x0140014001400140 // dec_reshuffle_const0
 DATA dec_const<>+0x08(SB)/8, $0x0140014001400140
-DATA dec_const<>+0x10(SB)/8, $0x0000110000001100 // dec_reshuffle_const1
-DATA dec_const<>+0x18(SB)/8, $0x0000110000001100
+DATA dec_const<>+0x10(SB)/8, $0x0001100000011000 // dec_reshuffle_const1
+DATA dec_const<>+0x18(SB)/8, $0x0001100000011000
 DATA dec_const<>+0x20(SB)/8, $0x090A040506000102 // dec_reshuffle_mask
 DATA dec_const<>+0x28(SB)/8, $0xFFFFFFFF0C0D0E08
 GLOBL dec_const<>(SB), (NOPTR+RODATA), $48
