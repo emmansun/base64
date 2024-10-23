@@ -5,6 +5,16 @@
 
 #include "textflag.h"
 
+DATA enc_const<>+0x00(SB)/8, $0x0405030401020001 // reshufle mask
+DATA enc_const<>+0x08(SB)/8, $0x0a0b090a07080607
+DATA enc_const<>+0x10(SB)/8, $0x0FC0FC000FC0FC00 // mulhi mask
+DATA enc_const<>+0x18(SB)/8, $0x0FC0FC0FC0FC0FC0
+DATA enc_const<>+0x20(SB)/8, $0x003F03F0003F03F0 // mullo mask
+DATA enc_const<>+0x28(SB)/8, $0x003F03F0003F03F0
+DATA enc_const<>+0x30(SB)/8, $0x0f0e0b0a07060302 // high part of word
+DATA enc_const<>+0x38(SB)/8, $0x1f1e1b1a17161312
+GLOBL enc_const<>(SB), (NOPTR+RODATA), $64
+
 //func encodeAsm(dst, src []byte, lut *[64]byte) int
 TEXT ·encodeAsm(SB),NOSPLIT,$0
 	MOVD dst_base+0(FP), R0
@@ -12,14 +22,15 @@ TEXT ·encodeAsm(SB),NOSPLIT,$0
 	MOVD src_len+32(FP), R2
 	MOVD lut+48(FP), R3
 
+	// load the Base64 alphabet into registers
 	VLD1 (R3), [V8.B16, V9.B16, V10.B16, V11.B16]
 	MOVD $0x3F, R4
 	VDUP R4, V7.B16
 	EOR R5, R5, R5
 
-loop:
+loop48:
 	CMP $48, R2
-	BLT done
+	BLT lessThan48
 
 	// Move the input bits to where they need to be in the outputs. Except
 	// for the first output, the high two bits are not cleared.
@@ -48,7 +59,42 @@ loop:
 
 	SUB $48, R2
 	ADD $64, R5
-	B loop
+	B loop48
+
+lessThan48:
+	// fast return
+	CMP $16, R2
+	BLT done
+
+	MOVD $enc_const<>(SB), R4
+	VLD1 (R4), [V3.B16, V4.B16, V5.B16, V6.B16]
+	MOVD $0x01000010, R4
+	VDUP R4, V7.S4        // mullo constant
+	VSHL $2, V7.S4, V12.S4 // mulhi constant
+
+loop12:
+	VLD1.P 12(R1), [V0.B16]
+	VTBL V3.B16, [V0.B16], V0.B16 // shuffle bytes
+	VAND V4.B16, V0.B16, V1.B16   // AND mulhi mask
+
+	WORD $0x2e61c182 // UMULL V1.H8, V12.H8, V2.H8
+	WORD $0x6e61c181 // UMULL2 V1.H8, V12.H8, V1.H8
+	VTBL V6.B16, [V2.B16, V1.B16], V1.B16
+
+	VAND V0.B16, V5.B16, V0.B16
+	WORD $0x4e609ce0 // VMUL V0.H8, V7.H8, V0.H8
+	VORR V0.B16, V1.B16, V0.B16
+
+	// The bits have now been shifted to the right locations;
+	// translate their values 0..63 to the Base64 alphabet.
+	// Use a 64-byte table lookup:
+	VTBL V0.B16, [V8.B16, V9.B16, V10.B16, V11.B16], V0.B16
+	VST1.P [V0.B16], 16(R0)
+
+	SUB $12, R2
+	ADD $16, R5
+	CMP $16, R2
+	BGE loop12
 
 done:
 	MOVD R5, ret+56(FP)

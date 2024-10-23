@@ -118,21 +118,22 @@ func TestUrlDecodeAsmWithError(t *testing.T) {
 	}
 }
 
-func BenchmarkEncode(b *testing.B) {
-	data := make([]byte, 8192)
-	dst := make([]byte, StdEncoding.EncodedLen(8192))
-	b.SetBytes(int64(len(data)))
-	for i := 0; i < b.N; i++ {
-		StdEncoding.Encode(dst, data)
-	}
-}
-
-func BenchmarkDecode(b *testing.B) {
-	data := []byte(StdEncoding.EncodeToString(make([]byte, 8192)))
-	dbuf := make([]byte, StdEncoding.DecodedLen(len(data)))
-	b.SetBytes(int64(len(data)))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		StdEncoding.Decode(dbuf, data)
+func TestDecodeWithLengthLessThan24(t *testing.T) {
+	dst1 := make([]byte, 24)
+	dst2 := make([]byte, 24)
+	src := []byte("abcdefghijklabcdefghijklabcdefghijklabcdefghijkl")
+	for i := 12; i < 18; i++ {
+		input := src[:i]
+		encodeGeneric(StdEncoding, dst1, input)
+		decode(StdEncoding, dst2, dst1[:StdEncoding.EncodedLen(len(input))])
+		if !bytes.Equal(dst2[:len(input)], input) {
+			t.Errorf("StdEncoding %v got %x, expected %x", i, dst2[:len(input)], input)
+		}
+		// test with padding
+		encodeGeneric(RawStdEncoding, dst1, input)
+		decode(RawStdEncoding, dst2, dst1[:RawStdEncoding.EncodedLen(len(input))])
+		if !bytes.Equal(dst2[:len(input)], input) {
+			t.Errorf("RawStdEncoding %v got %x, expected %x", i, dst2[:len(input)], input)
+		}
 	}
 }

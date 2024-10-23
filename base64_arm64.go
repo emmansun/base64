@@ -31,7 +31,7 @@ func encodeAsm(dst, src []byte, lut *[64]byte) int
 func decodeAsm(dst, src []byte, lut *[128]byte) int
 
 func encode(enc *Encoding, dst, src []byte) {
-	if len(src) >= 48 {
+	if len(src) >= 16 {
 		encoded := encodeAsm(dst, src, &enc.encode)
 		src = src[(encoded/4)*3:]
 		dst = dst[encoded:]

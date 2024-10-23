@@ -580,3 +580,31 @@ func TestDecoderRaw(t *testing.T) {
 		t.Errorf("reading NewDecoder(URLEncoding, %q) = %x, %v, want %x, nil", source+"==", dec3, err, want)
 	}
 }
+
+func BenchmarkEncode(b *testing.B) {
+	sizes := []int64{16, 28, 40, 128, 256, 512, 1024, 2048, 4096, 8192}
+	data := make([]byte, 8192)
+	dst := make([]byte, StdEncoding.EncodedLen(8192))
+	for _, size := range sizes {
+		b.Run(fmt.Sprintf("size-%d", size), func(b *testing.B) {
+			b.SetBytes(size)
+			for i := 0; i < b.N; i++ {
+				StdEncoding.Encode(dst, data[:size])
+			}
+		})
+	}
+}
+
+func BenchmarkDecode(b *testing.B) {
+	data := []byte(StdEncoding.EncodeToString(make([]byte, 8192)))
+	dbuf := make([]byte, StdEncoding.DecodedLen(len(data)))
+	sizes := []int64{24, 40, 56, 128, 256, 512, 1024, 2048, 4096, 8192}
+	for _, size := range sizes {
+		b.Run(fmt.Sprintf("size-%d", size), func(b *testing.B) {
+			b.SetBytes(size)
+			for i := 0; i < b.N; i++ {
+				StdEncoding.Decode(dbuf, data[:size])
+			}
+		})
+	}
+}
