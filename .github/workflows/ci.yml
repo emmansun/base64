@@ -23,7 +23,14 @@ jobs:
         go-version: ${{ matrix.goVer }}
        
     - name: Test
-      run: go test ./...
+      run: go test  -coverprofile=coverage1.txt ./...
 
     - name: Test Generic
-      run: go test -tags purego ./...      
+      run: go test -tags purego -coverprofile=coverage2.txt ./...      
+
+    - name: Upload results to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        files: ./coverage1.txt,./coverage2.txt
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
