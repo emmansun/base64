@@ -1,7 +1,7 @@
 # base64
 English | [简体中文](README-CN.md)
 
-Base64 with SIMD acceleration
+A drop-in replacement of Golang's base64 implementation with SIMD acceleration.
 
 [![ci](https://github.com/emmansun/base64/actions/workflows/ci.yml/badge.svg)](https://github.com/emmansun/base64/actions/workflows/ci.yml)
 [![arm64](https://github.com/emmansun/base64/actions/workflows/arm64_qemu.yml/badge.svg)](https://github.com/emmansun/base64/actions/workflows/arm64_qemu.yml)
