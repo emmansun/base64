@@ -202,8 +202,7 @@ loop:
 		VPERM X0, X0, REV_BYTES, X0
 #endif
 		// validate input
-		VSRW X0, FOUR, X1
-		VAND X1, NIBBLE_MASK, X1 // high nibble
+		VSRB X0, FOUR, X1 // high nibble
 		VAND X0, NIBBLE_MASK, X2
 		VPERM LUT_HI, LUT_HI, X1, X3
 		VPERM LUT_LO, LUT_LO, X2, X2
@@ -283,8 +282,7 @@ loop:
 		VPERM X0, X0, REV_BYTES, X0
 #endif
 		// validate input
-		VSRW X0, FOUR, X1
-		VAND X1, NIBBLE_MASK, X1 // high nibble
+		VSRB X0, FOUR, X1 // high nibble 
 		VAND X0, NIBBLE_MASK, X2
 		VPERM LUT_HI, LUT_HI, X1, X3
 		VPERM LUT_LO, LUT_LO, X2, X2
