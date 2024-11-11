@@ -153,8 +153,7 @@ TEXT ·decodeStdAsm(SB),NOSPLIT,$0
 loop:
 		VL (R2), X0
 		// validate the input
-		VESRLF $4, X0, X1
-		VN X1, NIBBLE_MASK, X1 // high nibbles
+		VESRLB $4, X0, X1 // high nibbles
 		VN X0, NIBBLE_MASK, X2
 		VPERM LUT_HI, LUT_HI, X1, X3
 		VPERM LUT_LO, LUT_LO, X2, X2
@@ -216,8 +215,7 @@ TEXT ·decodeUrlAsm(SB),NOSPLIT,$0
 loop:
 		VL (R2), X0
 		// validate the input
-		VESRLF $4, X0, X1
-		VN X1, NIBBLE_MASK, X1 // high nibbles
+		VESRLB $4, X0, X1 // high nibbles
 		VN X0, NIBBLE_MASK, X2
 		VPERM LUT_HI, LUT_HI, X1, X3
 		VPERM LUT_LO, LUT_LO, X2, X2
