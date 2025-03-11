@@ -251,7 +251,7 @@ func (enc *Encoding) EncodeToString(src []byte) string {
 	}
 	buf := make([]byte, enc.EncodedLen(srcLen))
 	enc.Encode(buf, src)
-	return *(*string)(unsafe.Pointer(&buf))
+	return  unsafe.String(unsafe.SliceData(buf), len(buf))
 }
 
 type encoder struct {
@@ -478,9 +478,7 @@ func (enc *Encoding) DecodeString(s string) ([]byte, error) {
 		return nil, nil
 	}
 	dbuf := make([]byte, enc.DecodedLen(srcLen))
-	x := (*[2]uintptr)(unsafe.Pointer(&s))
-	h := [3]uintptr{x[0], x[1], x[1]}
-	d := *(*[]byte)(unsafe.Pointer(&h))
+	d := unsafe.Slice(unsafe.StringData(s), srcLen)
 	n, err := enc.Decode(dbuf, d)
 	return dbuf[:n], err
 }
