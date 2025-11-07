@@ -54,6 +54,7 @@ TEXT ·encodeAsm(SB),NOSPLIT,$0
 	VMOVQ (R8), LUT
 
 	MOVV $16, R10
+	MOVV R5, R11 			 // save dst pointer
 	
 loop:
 		VMOVQ (R6), V8               // load 16 bytes input
@@ -71,14 +72,17 @@ loop:
 
 		WORD $0xd549ce9              // VSHUFB V9, LUT, LUT, V9
 		VADDB V9, V8, V8
+		*/
 		VMOVQ V8, (R5)               // store 16 bytes output
-*/
+
 		ADDV $12, R6, R6
 		SUBV $12, R7, R7
 		ADDV $16, R5, R5
 
 		BGEU R7, R10, loop
-
+done:
+	SUBV R11, R5
+	MOVV R5, ret+56(FP)
 	RET
 
 //func decodeStdAsm(dst, src []byte) int
@@ -88,4 +92,3 @@ TEXT ·decodeStdAsm(SB),NOSPLIT,$0
 //func decodeUrlAsmdst, src []byte) int
 TEXT ·decodeUrlAsm(SB),NOSPLIT,$0
 	RET
-
