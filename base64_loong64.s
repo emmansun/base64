@@ -49,8 +49,8 @@ TEXT ·encodeAsm(SB),NOSPLIT,$0
 	VMOVQ (2*16)(R9), SHIFT_RIGHT_MASK
 	VMOVQ (3*16)(R9), MULLO_MASK
 	VMOVQ (4*16)(R9), SHIFT_LEFT_MASK
-	//VMOVQ (5*16)(R9), RANGE1_END
-	//VMOVQ (6*16)(R9), RANGE0_END
+	VMOVQ (5*16)(R9), RANGE1_END
+	VMOVQ (6*16)(R9), RANGE0_END
 	VMOVQ (R8), LUT
 
 	MOVV $16, R10
@@ -58,21 +58,21 @@ TEXT ·encodeAsm(SB),NOSPLIT,$0
 loop:
 		VMOVQ (R6), V8               // load 16 bytes input
 		WORD $0xd502108              // VSHUFB RESHUFFLE_MASK, V8, V8, V8   // reshuffle bytes
+		/*
 		VANDV MULHI_MASK, V8, V9
 		VSRLH SHIFT_RIGHT_MASK, V9, V9
 		VANDV MULLO_MASK, V8, V8
 		VSLLH SHIFT_LEFT_MASK, V8, V8
 		VORV V9, V8, V8
 
-		VSUBBU $0x33, V8, V9
-		VSUBBU $0x19, V8, V10   // NO VSLTB or VSLEB support now
-		VSEQB $0, V10, V10
-		VXORB $0xff, V10, V10        // invert mask
+		VSSUBBU RANGE1_END, V8, V9    // waiting vssub.bu
+		VSLTB V8, RANGE0_END, V10     // NO VSLTB or VSLEB support now, waiting for VSLTB instruction
 		VSUBB V10, V9, V9
+
 		WORD $0xd549ce9              // VSHUFB V9, LUT, LUT, V9
 		VADDB V9, V8, V8
 		VMOVQ V8, (R5)               // store 16 bytes output
-
+*/
 		ADDV $12, R6, R6
 		SUBV $12, R7, R7
 		ADDV $16, R5, R5
