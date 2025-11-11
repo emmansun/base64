@@ -59,20 +59,19 @@ TEXT ·encodeAsm(SB),NOSPLIT,$0
 loop:
 		VMOVQ (R6), V8               // load 16 bytes input
 		WORD $0xd502108              // VSHUFB RESHUFFLE_MASK, V8, V8, V8   // reshuffle bytes
-		/*
 		VANDV MULHI_MASK, V8, V9
 		VSRLH SHIFT_RIGHT_MASK, V9, V9
 		VANDV MULLO_MASK, V8, V8
 		VSLLH SHIFT_LEFT_MASK, V8, V8
 		VORV V9, V8, V8
 
-		VSSUBBU RANGE1_END, V8, V9    // waiting vssub.bu
-		VSLTB V8, RANGE0_END, V10     // NO VSLTB or VSLEB support now, waiting for VSLTB instruction
+		WORD $0x38261509              // VSSUBBU RANGE1_END, V8, V9
+		WORD $0x380220ca              // VSLEBU V8, RANGE0_END, V10
 		VSUBB V10, V9, V9
 
 		WORD $0xd549ce9              // VSHUFB V9, LUT, LUT, V9
 		VADDB V9, V8, V8
-		*/
+
 		VMOVQ V8, (R5)               // store 16 bytes output
 
 		ADDV $12, R6, R6
@@ -92,3 +91,4 @@ TEXT ·decodeStdAsm(SB),NOSPLIT,$0
 //func decodeUrlAsmdst, src []byte) int
 TEXT ·decodeUrlAsm(SB),NOSPLIT,$0
 	RET
+
