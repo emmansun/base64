@@ -73,7 +73,7 @@ loop:
 		WORD $0xd549ce9              // VSHUFB V9, LUT, LUT, V9
 		VADDB V9, V8, V8
 */		
-		VMOVQ V10, (R5)               // store 16 bytes output
+		VMOVQ V8, (R5)               // store 16 bytes output
 
 		ADDV $12, R6, R6
 		SUBV $12, R7, R7
