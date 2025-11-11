@@ -67,11 +67,13 @@ loop:
 
 		WORD $0x704c1509              // VSSUBBU RANGE1_END, V8, V9
 		WORD $0x700420ca              // VSLEBU V8, RANGE0_END, V10
+/*		
 		VSUBB V10, V9, V9
 
 		WORD $0xd549ce9              // VSHUFB V9, LUT, LUT, V9
 		VADDB V9, V8, V8
-		VMOVQ V8, (R5)               // store 16 bytes output
+*/		
+		VMOVQ V10, (R5)               // store 16 bytes output
 
 		ADDV $12, R6, R6
 		SUBV $12, R7, R7
