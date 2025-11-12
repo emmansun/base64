@@ -18,6 +18,7 @@ A drop-in replacement of Golang's base64 implementation with SIMD acceleration.
 - **ARM64** NEON
 - **PPC64X**
 - **S390X**
+- **LOONG64** LSX
 
 ## Benchmark
 **SDK vs. Purego**:
