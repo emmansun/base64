@@ -6,11 +6,6 @@
 
 #include "textflag.h"
 
-#define ZERO R0
-#define RSP R3
-#define res_ptr R4
-
-
 DATA base64_const<>+0x00(SB)/8, $0x0405030401020001 // shuffle byte order for input 12 bytes
 DATA base64_const<>+0x08(SB)/8, $0x0a0b090a07080607 
 DATA base64_const<>+0x10(SB)/8, $0x0FC0FC000FC0FC00 // mulhi mask
@@ -178,5 +173,52 @@ done:
 
 //func decodeUrlAsmdst, src []byte) int
 TEXT ·decodeUrlAsm(SB),NOSPLIT,$0
-	RET
+	MOVV dst_base+0(FP), R5
+	MOVV src_base+24(FP), R6
+	MOVV src_len+32(FP), R7
 
+	MOVV $decode_const<>(SB), R8
+	VMOVQ (4*16)(R8), LUT_HI
+	VMOVQ (5*16)(R8), LUT_LO
+	VMOVQ (6*16)(R8), DECODE_END
+	VMOVQ (7*16)(R8), LUT_ROLL
+	VMOVQ (8*16)(R8), RESHUFFLE_CONST0
+	VMOVQ (9*16)(R8), RESHUFFLE_CONST1
+	VMOVQ (10*16)(R8), RESHUFFLE_MASK
+	MOVV $24, R10
+loop:
+		VMOVQ (R6), V8        // load 16 bytes input
+		// validate the input data
+		VSRLB $4, V8, V9      // high nibble
+		VANDB $0xf, V8, V10   // low nibble
+		WORD $0xd54842b       // VSHUFB V9, LUT_HI, LUT_HI, V11
+		WORD $0xd55084a       // VSHUFB V10, LUT_LO, LUT_LO, V10
+		VANDV V11, V10, V10
+		VSETEQV V10, FCC0
+		BFPF done
+
+		// translate
+		WORD $0x7008206a          // compare 0x5E with input bytes: VSLTBU V8, DECODE_END, V10
+		VSUBB V10, V9, V10        // sub gt_5E with hi_nibbles
+		WORD $0xd55108a           // VSHUFB V10, LUT_ROLL, LUT_ROLL, V10
+		VADDB V10, V8, V8         // Now simply add the delta values to the input
+
+		// reshuffle output bytes
+		VMULWEVHBU V8, RESHUFFLE_CONST0, V9        // We alos can use vmaddwev.h.bu and vmaddwod.h.bu, then we just need two instructions
+		VMULWODHBU V8, RESHUFFLE_CONST0, V10
+		VADDH V9, V10, V8
+
+		VMULWEVWHU V8, RESHUFFLE_CONST1, V9
+		VMULWODWHU V8, RESHUFFLE_CONST1, V10
+		VADDW V9, V10, V8
+
+		WORD $0xd53a108           // VSHUFB RESHUFFLE_MASK, V8, V8, V8
+		VMOVQ V8, (R5)            // store 12 bytes output
+
+		ADDV $12, R5, R5
+		SUBV $16, R7, R7
+		ADDV $16, R6, R6
+		BGEU R7, R10, loop
+done:
+	MOVV R7, ret+48(FP)
+	RET
