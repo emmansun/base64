@@ -152,14 +152,11 @@ loop:
 		VADDB V10, V8, V8         // Now simply add the delta values to the input
 
 		// reshuffle output bytes
-		VMULWEVHBU V8, RESHUFFLE_CONST0, V9        // We alos can use vmaddwev.h.bu and vmaddwod.h.bu, then we just need two instructions
+		VMULWEVHBU V8, RESHUFFLE_CONST0, V9
 		WORD $0x70b620a9          // vmaddwod.h.bu V8, RESHUFFLE_CONST0, V9              
-		//VMULWODHBU V8, RESHUFFLE_CONST0, V10
-		//VADDH V9, V10, V8
 
-		VMULWEVWHU V9, RESHUFFLE_CONST1, V10
-		VMULWODWHU V9, RESHUFFLE_CONST1, V8
-		VADDW V10, V8, V8
+		VMULWEVWHU V9, RESHUFFLE_CONST1, V8
+		WORD $0x70b6a4c8          // vmaddwod.w.hu V9, RESHUFFLE_CONST1, V8
 
 		WORD $0xd53a108           // VSHUFB RESHUFFLE_MASK, V8, V8, V8
 		VMOVQ V8, (R5)            // store 12 bytes output
@@ -205,13 +202,11 @@ loop:
 		VADDB V10, V8, V8         // Now simply add the delta values to the input
 
 		// reshuffle output bytes
-		VMULWEVHBU V8, RESHUFFLE_CONST0, V9        // We alos can use vmaddwev.h.bu and vmaddwod.h.bu, then we just need two instructions
-		VMULWODHBU V8, RESHUFFLE_CONST0, V10
-		VADDH V9, V10, V8
+		VMULWEVHBU V8, RESHUFFLE_CONST0, V9
+		WORD $0x70b620a9          // vmaddwod.h.bu V8, RESHUFFLE_CONST0, V9              
 
-		VMULWEVWHU V8, RESHUFFLE_CONST1, V9
-		VMULWODWHU V8, RESHUFFLE_CONST1, V10
-		VADDW V9, V10, V8
+		VMULWEVWHU V9, RESHUFFLE_CONST1, V8
+		WORD $0x70b6a4c8          // vmaddwod.w.hu V9, RESHUFFLE_CONST1, V8
 
 		WORD $0xd53a108           // VSHUFB RESHUFFLE_MASK, V8, V8, V8
 		VMOVQ V8, (R5)            // store 12 bytes output
