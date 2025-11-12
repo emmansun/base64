@@ -153,7 +153,7 @@ loop:
 		// translate
 		VSEQB V8, DECODE_END, V10 // compare 0x2F with input bytes
 		VADDB V9, V10, V10        // add eq_2F with hi_nibbles
-		VMOVQ V10, (R5)            // store 12 bytes output
+		VMOVQ V9, (R5)            // store 12 bytes output
 
 		ADDV $12, R5, R5
 		SUBV $16, R7, R7
