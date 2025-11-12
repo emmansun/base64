@@ -153,8 +153,9 @@ loop:
 
 		// reshuffle output bytes
 		VMULWEVHBU V8, RESHUFFLE_CONST0, V9        // We alos can use vmaddwev.h.bu and vmaddwod.h.bu, then we just need two instructions
-		VMULWODHBU V8, RESHUFFLE_CONST0, V10
-		VADDH V9, V10, V8
+		WORD $0x70b620a9          // vmaddwod.h.bu V8, RESHUFFLE_CONST0, V9              
+		//VMULWODHBU V8, RESHUFFLE_CONST0, V10
+		//VADDH V9, V10, V8
 
 		VMULWEVWHU V8, RESHUFFLE_CONST1, V9
 		VMULWODWHU V8, RESHUFFLE_CONST1, V10
