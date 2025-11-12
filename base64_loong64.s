@@ -153,20 +153,7 @@ loop:
 		// translate
 		VSEQB V8, DECODE_END, V10 // compare 0x2F with input bytes
 		VADDB V9, V10, V10        // add eq_2F with hi_nibbles
-		WORD $0xd55108a           // VSHUFB V10, LUT_ROLL, LUT_ROLL, V10
-		VADDB V10, V8, V8         // Now simply add the delta values to the input
-
-		// reshuffle output bytes
-		VMULWEVHBU V8, RESHUFFLE_CONST0, V9        // We alos can use vmaddwev.h.bu and vmaddwod.h.bu, then we just need two instructions
-		VMULWODHBU V8, RESHUFFLE_CONST0, V10
-		VADDH V9, V10, V8
-
-		VMULWEVWHU V8, RESHUFFLE_CONST1, V9
-		VMULWODWHU V8, RESHUFFLE_CONST1, V10
-		VADDW V9, V10, V8
-
-		WORD $0xd53a108           // VSHUFB RESHUFFLE_MASK, V8, V8, V8
-		VMOVQ V8, (R5)            // store 12 bytes output
+		VMOVQ V10, (R5)            // store 12 bytes output
 
 		ADDV $12, R5, R5
 		SUBV $16, R7, R7
