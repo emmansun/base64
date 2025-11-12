@@ -147,13 +147,13 @@ loop:
 		WORD $0xd548429       // VSHUFB V9, LUT_HI, LUT_HI, V9
 		WORD $0xd55084a       // VSHUFB V10, LUT_LO, LUT_LO, V10
 		VANDV V9, V10, V10
-		VSETEQV V10, FCC0
-		BFPF done
+		//VSETEQV V10, FCC0
+		//BFPF done
 
 		// translate
-		VSEQB V8, DECODE_END, V10 // compare 0x2F with input bytes
-		VADDB V9, V10, V10        // add eq_2F with hi_nibbles
-		VMOVQ V9, (R5)            // store 12 bytes output
+		//VSEQB V8, DECODE_END, V10 // compare 0x2F with input bytes
+		//VADDB V9, V10, V10        // add eq_2F with hi_nibbles
+		VMOVQ V10, (R5)            // store 12 bytes output
 
 		ADDV $12, R5, R5
 		SUBV $16, R7, R7
