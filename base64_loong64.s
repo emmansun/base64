@@ -4,6 +4,10 @@
 
 //go:build !purego
 
+// The instruction references include
+// https://gitlab.quantr.hk/quantr/toolchain/qemu/-/blob/master/target/loongarch/insns.decode
+// https://jia.je/unofficial-loongarch-intrinsics-guide
+
 #include "textflag.h"
 
 DATA base64_const<>+0x00(SB)/8, $0x0405030401020001 // shuffle byte order for input 12 bytes
