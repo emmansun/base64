@@ -78,5 +78,5 @@ rvvLoop:
 
 done:
 	// Return encoded bytes count.
-	MOV	X9, ret+64(FP)
+	MOV	X9, ret+56(FP)
 	RET
