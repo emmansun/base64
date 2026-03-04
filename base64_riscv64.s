@@ -26,7 +26,7 @@ rvvLoop:
 
 	// triplets = remaining / 3, then request adaptive VL for e8,m1.
 	DIVU	X20, X7, X11
-	VSETVLI	X11, E8, M1, TA, MA, X10
+	VSETVLI	X11, E8, M1, TA, MA, X10  // X10=actual VL (triplet lanes), not bytes.
 
 	// Load strided triplet bytes: V1=a, V2=b, V3=c.
 	VLSE8V	(X6), X20, V1
@@ -35,7 +35,11 @@ rvvLoop:
 	ADD	$2, X6, X11
 	VLSE8V	(X11), X20, V3
 
-	// Build base64 indices (6-bit each):
+	// Build base64 indices (6-bit each).
+	// Implementation detail: i1/i2 are formed first, then truncated with a shared
+	// mask register X21=63 via VANDVX; i3 is truncated directly from c with VANDVX.
+	// i0 comes from a>>2 and is already in [0,63], so no extra mask is needed.
+	// Final semantics:
 	// i0 = a>>2; i1 = ((a&3)<<4)|(b>>4); i2 = ((b&0xf)<<2)|(c>>6); i3 = c&0x3f.
 	VSRLVI	$2, V1, V4
 
@@ -57,6 +61,7 @@ rvvLoop:
 	VLUXEI8V	(X8), V6, V14
 	VLUXEI8V	(X8), V7, V15
 
+	// Store interleaved output.
 	VSSE8V	V12, X24, (X5)
 	ADD	$1, X5, X11
 	VSSE8V	V13, X24, (X11)
