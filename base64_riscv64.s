@@ -85,3 +85,86 @@ done:
 	// Return encoded bytes count.
 	MOV	X9, ret+56(FP)
 	RET
+
+// func decodeAsm(dst, src []byte, lut *[256]byte) int
+TEXT ·decodeAsm(SB), NOSPLIT, $0
+	// X5: dst pointer, X6: src pointer, X7: remaining src bytes
+	// X8: 256-byte decode LUT.
+	// Contract: return remaining src bytes. Caller decodes SIMD-processed prefix and
+	// hands the remain tail (or invalid-triggered suffix) to decodeGeneric.
+	MOV	dst_base+0(FP), X5
+	MOV	src_base+24(FP), X6
+	MOV	src_len+32(FP), X7
+	MOV	lut+48(FP), X8
+	MOV	$4, X20
+	MOV	$255, X22
+	MOV	$3, X24
+
+decodeRvvLoop:
+	// Need at least one full 4-byte quantum.
+	BLTU	X7, X20, decodeDone
+
+	// quads = remaining / 4, then request adaptive VL for e8,m1.
+	DIVU	X20, X7, X11
+	VSETVLI	X11, E8, M1, TA, MA, X10
+
+	// Load each character position with stride 4.
+	VLSE8V	(X6), X20, V1
+	ADD	$1, X6, X11
+	VLSE8V	(X11), X20, V2
+	ADD	$2, X6, X11
+	VLSE8V	(X11), X20, V3
+	ADD	$3, X6, X11
+	VLSE8V	(X11), X20, V4
+
+	// Translate from ASCII to 6-bit values.
+	VLUXEI8V	(X8), V1, V5
+	VLUXEI8V	(X8), V2, V6
+	VLUXEI8V	(X8), V3, V7
+	VLUXEI8V	(X8), V4, V8
+
+	// Any 0xFF value indicates invalid character in this vector window.
+	// Stop SIMD here and return remain for precise generic handling.
+	VMSNEVX	X22, V5, V12
+	VMSNEVX	X22, V6, V13
+	VMANDMM	V12, V13, V12
+	VMSNEVX	X22, V7, V14
+	VMANDMM	V12, V14, V12
+	VMSNEVX	X22, V8, V15
+	VMANDMM	V12, V15, V12
+	VCPOPM	V12, X12
+	BNE	X12, X10, decodeDone
+
+	// Pack four 6-bit values into three bytes.
+	VSLLVI	$2, V5, V9
+	VSRLVI	$4, V6, V11
+	VORVV	V11, V9, V9
+
+	VSLLVI	$4, V6, V10
+	VSRLVI	$2, V7, V11
+	VORVV	V11, V10, V10
+
+	VSLLVI	$6, V7, V11
+	VORVV	V8, V11, V11
+
+	// Interleaved store with stride 3.
+	VSSE8V	V9, X24, (X5)
+	ADD	$1, X5, X12
+	VSSE8V	V10, X24, (X12)
+	ADD	$2, X5, X12
+	VSSE8V	V11, X24, (X12)
+
+	// Advance pointers by processed quads (4*VL input, 3*VL output).
+	SLL	$2, X10, X11
+	ADD	X11, X6
+	SUB	X11, X7
+
+	SLL	$1, X10, X11
+	ADD	X10, X11, X11
+	ADD	X11, X5
+	JMP	decodeRvvLoop
+
+decodeDone:
+	// Remaining source length (0 when SIMD consumed all valid quanta).
+	MOV	X7, ret+56(FP)
+	RET

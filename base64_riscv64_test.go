@@ -63,6 +63,74 @@ func TestEncodeAsmReturnPrefix(t *testing.T) {
 	}
 }
 
+func TestStdDecodeAsm(t *testing.T) {
+	if !cpu.RISCV64.HasV {
+		t.Skip("skip riscv64 asm test: RVV not supported")
+	}
+	src := []byte("YWJjZGVmZ2hpamts")
+	dst := make([]byte, StdEncoding.DecodedLen(len(src)))
+	remain := decodeAsm(dst, src, &dencodeStdLut)
+	if remain != 0 {
+		t.Fatalf("remain=%d, expected=0", remain)
+	}
+	if !bytes.Equal(dst[:12], []byte("abcdefghijkl")) {
+		t.Fatalf("decode mismatch: %q", string(dst[:12]))
+	}
+
+	bad := []byte("YWJj?GVmZ2hpamts")
+	remain = decodeAsm(dst, bad, &dencodeStdLut)
+	if remain == 0 {
+		t.Fatalf("expected non-zero remain on invalid input")
+	}
+	if remain != len(bad) {
+		t.Fatalf("remain=%d, expected=%d", remain, len(bad))
+	}
+}
+
+func TestDecodeRVVDispatchConsistency(t *testing.T) {
+	old := supportRVV
+	defer func() { supportRVV = old }()
+
+	if !cpu.RISCV64.HasV {
+		t.Skip("skip RVV dispatch path test: RVV not supported")
+	}
+
+	raw := []byte("abcdefghijklabcdefghijkl")
+	enc := make([]byte, StdEncoding.EncodedLen(len(raw)))
+	StdEncoding.Encode(enc, raw)
+
+	dstFallback := make([]byte, StdEncoding.DecodedLen(len(enc)))
+	supportRVV = false
+	n1, err1 := decode(StdEncoding, dstFallback, enc)
+
+	dstRVV := make([]byte, StdEncoding.DecodedLen(len(enc)))
+	supportRVV = true
+	n2, err2 := decode(StdEncoding, dstRVV, enc)
+
+	if n1 != n2 || err1 != err2 {
+		t.Fatalf("decode result mismatch: fallback=(%d,%v) rvv=(%d,%v)", n1, err1, n2, err2)
+	}
+	if !bytes.Equal(dstFallback[:n1], dstRVV[:n2]) {
+		t.Fatalf("decode bytes mismatch between fallback and RVV paths")
+	}
+
+	bad := []byte("YWJj?GVmZ2hpamts")
+	dstFallback = make([]byte, StdEncoding.DecodedLen(len(bad)))
+	supportRVV = false
+	n1, err1 = decode(StdEncoding, dstFallback, bad)
+
+	dstRVV = make([]byte, StdEncoding.DecodedLen(len(bad)))
+	supportRVV = true
+	n2, err2 = decode(StdEncoding, dstRVV, bad)
+
+	if n1 != n2 || err1 == nil || err2 == nil {
+		t.Fatalf("expected matching decode errors, fallback=(%d,%v) rvv=(%d,%v)", n1, err1, n2, err2)
+	}
+	if !bytes.Equal(dstFallback[:n1], dstRVV[:n2]) {
+		t.Fatalf("decoded prefix mismatch on invalid input")
+	}
+}
+
 func TestEncodeRVVDispatchConsistency(t *testing.T) {
 	old := supportRVV
 	defer func() { supportRVV = old }()
