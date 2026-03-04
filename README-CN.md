@@ -8,6 +8,7 @@
 [![ppc64le](https://github.com/emmansun/base64/actions/workflows/ppc64le_qemu.yml/badge.svg)](https://github.com/emmansun/base64/actions/workflows/ppc64le_qemu.yml)
 [![s390x](https://github.com/emmansun/base64/actions/workflows/s390x_qemu.yml/badge.svg)](https://github.com/emmansun/base64/actions/workflows/s390x_qemu.yml)
 [![loong64](https://github.com/emmansun/base64/actions/workflows/loong64_qemu.yml/badge.svg)](https://github.com/emmansun/base64/actions/workflows/loong64_qemu.yml)
+[![riscv64](https://github.com/emmansun/base64/actions/workflows/riscv64_qemu.yml/badge.svg)](https://github.com/emmansun/base64/actions/workflows/riscv64_qemu.yml)
 [![codecov](https://codecov.io/gh/emmansun/base64/graph/badge.svg?token=LNNXNW4T5F)](https://codecov.io/gh/emmansun/base64)
 [![Go Report Card](https://goreportcard.com/badge/github.com/emmansun/base64)](https://goreportcard.com/report/github.com/emmansun/base64)
 [![Documentation](https://godoc.org/github.com/emmansun/base64?status.svg)](https://godoc.org/github.com/emmansun/base64)
@@ -21,6 +22,7 @@
 - **PPC64X**
 - **S390X**
 - **LOONG64** LSX
+- **RISCV64** RVV
 
 ## 性能
 关于性能，AMD64下的性能可以参考[English](README.md) 说明，非AMD64下的性能请自行测试。另外需要说明的是，解码的时候，如果文本含有回车换行，当前实现没有优势。

@@ -8,6 +8,7 @@ A drop-in replacement of Golang's base64 implementation with SIMD acceleration.
 [![ppc64le](https://github.com/emmansun/base64/actions/workflows/ppc64le_qemu.yml/badge.svg)](https://github.com/emmansun/base64/actions/workflows/ppc64le_qemu.yml)
 [![s390x](https://github.com/emmansun/base64/actions/workflows/s390x_qemu.yml/badge.svg)](https://github.com/emmansun/base64/actions/workflows/s390x_qemu.yml)
 [![loong64](https://github.com/emmansun/base64/actions/workflows/loong64_qemu.yml/badge.svg)](https://github.com/emmansun/base64/actions/workflows/loong64_qemu.yml)
+[![riscv64](https://github.com/emmansun/base64/actions/workflows/riscv64_qemu.yml/badge.svg)](https://github.com/emmansun/base64/actions/workflows/riscv64_qemu.yml)
 [![codecov](https://codecov.io/gh/emmansun/base64/graph/badge.svg?token=LNNXNW4T5F)](https://codecov.io/gh/emmansun/base64)
 [![Go Report Card](https://goreportcard.com/badge/github.com/emmansun/base64)](https://goreportcard.com/report/github.com/emmansun/base64)
 [![Documentation](https://godoc.org/github.com/emmansun/base64?status.svg)](https://godoc.org/github.com/emmansun/base64)
@@ -20,6 +21,7 @@ A drop-in replacement of Golang's base64 implementation with SIMD acceleration.
 - **PPC64X**
 - **S390X**
 - **LOONG64** LSX
+- **RISCV64** RVV
 
 ## Benchmark
 **SDK vs. Purego**:
