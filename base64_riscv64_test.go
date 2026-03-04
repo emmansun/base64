@@ -17,23 +17,25 @@ func TestStdEncodeAsm(t *testing.T) {
 	if !cpu.RISCV64.HasV {
 		t.Skip("skip riscv64 asm test: RVV not supported")
 	}
-	pairs := []testpair{
-		{"abcdefghijkl0000", "YWJjZGVmZ2hpamts"},
-		{"\x2b\xf7\xcc\x27\x01\xfe\x43\x97\xb4\x9e\xbe\xed\x5a\xcc\x70\x90", "K/fMJwH+Q5e0nr7t"},
-		{"abcdefghijklabcdefghijkl0000", "YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts"},
-		{"abcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijkl", "YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts"},
+	inputs := [][]byte{
+		[]byte("abcdefghijkl"),
+		[]byte("\x2b\xf7\xcc\x27\x01\xfe\x43\x97\xb4\x9e\xbe\xed"),
+		[]byte("abcdefghijklabcdefghijkl"),
+		[]byte("abcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijkl"),
 	}
-	for _, p := range pairs {
-		src := []byte(p.decoded)
-		expected := []byte(p.encoded)
-		dst := make([]byte, len(expected))
-
+	for _, src := range inputs {
+		dst := make([]byte, StdEncoding.EncodedLen(len(src)))
 		ret := encodeAsm(dst, src, &StdEncoding.encode)
-		if ret != len(expected) {
-			t.Fatalf("ret=%d, expected=%d", ret, len(expected))
+
+		expectedRet := (len(src) / 3) * 4
+		if ret != expectedRet {
+			t.Fatalf("ret=%d, expected=%d", ret, expectedRet)
 		}
-		if !bytes.Equal(dst, expected) {
-			t.Fatalf("got %x, expected %x", dst, expected)
+
+		expected := make([]byte, StdEncoding.EncodedLen((len(src)/3)*3))
+		encodeGeneric(StdEncoding, expected, src[:(len(src)/3)*3])
+		if !bytes.Equal(dst[:ret], expected[:ret]) {
+			t.Fatalf("got %x, expected %x", dst[:ret], expected[:ret])
 		}
 	}
 }
