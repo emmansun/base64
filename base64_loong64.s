@@ -76,7 +76,10 @@ TEXT ·encodeAsm(SB),NOSPLIT,$0
 	MOVV $base64_const<>(SB), R9
 
 	MOVBU ·useLASX(SB), R10
-	BNE R10, R0, lasx
+	BEQ  R10, R0, lsx_path
+	MOVV $28, R10
+	BGEU R7, R10, lasx
+lsx_path:
 
 	VMOVQ (0*16)(R9), RESHUFFLE_MASK
 	VMOVQ (1*16)(R9), MULHI_MASK
@@ -119,21 +122,22 @@ done:
 // LASX path: processes 24 bytes per iteration (32 bytes output)
 lasx:
 	// Load constants into LSX registers then broadcast to LASX high lane
-	VMOVQ (0*16)(R9), V0           // RESHUFFLE_MASK (head: 12-byte layout)
+	// Register layout matches LSX: V1=SHIFT_RIGHT_MASK, V2=MULHI_MASK, V3=SHIFT_LEFT_MASK, V4=MULLO_MASK
+	VMOVQ (0*16)(R9), V0           // V0 = reshuffle mask (head: 12-byte layout)
 	XVMOVQ X0, X0.Q2              // broadcast Q0→high lane (xvreplve0.q)
-	VMOVQ (1*16)(R9), V1           // MULHI_MASK
+	VMOVQ (2*16)(R9), V1           // V1 = SHIFT_RIGHT_MASK (0x0006000a...)
 	XVMOVQ X1, X1.Q2
-	VMOVQ (2*16)(R9), V2           // SHIFT_RIGHT_MASK
+	VMOVQ (1*16)(R9), V2           // V2 = MULHI_MASK (0x0FC0FC00...)
 	XVMOVQ X2, X2.Q2
-	VMOVQ (3*16)(R9), V3           // MULLO_MASK
+	VMOVQ (4*16)(R9), V3           // V3 = SHIFT_LEFT_MASK (0x0008000...)
 	XVMOVQ X3, X3.Q2
-	VMOVQ (4*16)(R9), V4           // SHIFT_LEFT_MASK
+	VMOVQ (3*16)(R9), V4           // V4 = MULLO_MASK (0x003F03F0...)
 	XVMOVQ X4, X4.Q2
-	VMOVQ (5*16)(R9), V5           // RANGE1_END
+	VMOVQ (5*16)(R9), V5           // V5 = RANGE1_END
 	XVMOVQ X5, X5.Q2
-	VMOVQ (6*16)(R9), V6           // RANGE0_END
+	VMOVQ (6*16)(R9), V6           // V6 = RANGE0_END
 	XVMOVQ X6, X6.Q2
-	VMOVQ (R8), V7                 // LUT
+	VMOVQ (R8), V7                 // V7 = LUT
 	XVMOVQ X7, X7.Q2
 	// Load loop reshuffle mask (32-byte layout, at offset 7*16)
 	XVMOVQ (7*16)(R9), X13
@@ -148,10 +152,10 @@ lasx_head:
 	VMOVQ 12(R6), V9               // bytes [12..27]
 	WORD $0x77ec8128               // xvpermi.q X8, X9, 0x20: X8.Q0=keep, X8.Q1=X9.Q0 → X8={ [12..27] | [0..15] }
 	WORD $0x0d602108               // XVSHUFB X0, X8, X8, X8  // reshuffle (head layout)
-	XVANDV X1, X8, X9
-	XVSRLH X2, X9, X9
-	XVANDV X3, X8, X8
-	XVSLLH X4, X8, X8
+	XVANDV X2, X8, X9
+	XVSRLH X1, X9, X9
+	XVANDV X4, X8, X8
+	XVSLLH X3, X8, X8
 	XVORV X9, X8, X8
 	WORD $0x744c1509               // XVSSUBBU X5, X8, X9
 	WORD $0x740820ca               // XVSLTBU X8, X6, X10
@@ -169,10 +173,10 @@ lasx_loop:
 	// Load 28 bytes borrowing 4 bytes before current pointer
 	XVMOVQ -4(R6), X8             // bytes [-4..27], 32 bytes total
 	WORD $0x0d66a108               // XVSHUFB X13, X8, X8, X8  // reshuffle (loop layout)
-	XVANDV X1, X8, X9
-	XVSRLH X2, X9, X9
-	XVANDV X3, X8, X8
-	XVSLLH X4, X8, X8
+	XVANDV X2, X8, X9
+	XVSRLH X1, X9, X9
+	XVANDV X4, X8, X8
+	XVSLLH X3, X8, X8
 	XVORV X9, X8, X8
 	WORD $0x744c1509               // XVSSUBBU X5, X8, X9
 	WORD $0x740820ca               // XVSLTBU X8, X6, X10
