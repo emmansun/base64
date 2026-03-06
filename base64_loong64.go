@@ -9,9 +9,15 @@ package base64
 import "golang.org/x/sys/cpu"
 
 var (
-	supportLSX = cpu.Loong64.HasLSX
+	supportLSX  = cpu.Loong64.HasLSX
 	supportLASX = cpu.Loong64.HasLASX
+	useLSX      = supportLSX
+	useLASX     = supportLASX
 )
+
+func useLoong64ASM() bool {
+	return useLSX || useLASX
+}
 
 //go:noescape
 func encodeAsm(dst, src []byte, lut *[16]byte) int
@@ -23,7 +29,7 @@ func decodeStdAsm(dst, src []byte) int
 func decodeUrlAsm(dst, src []byte) int
 
 func encode(enc *Encoding, dst, src []byte) {
-	if supportLSX && len(src) >= 16 && enc.lut != nil {
+	if useLoong64ASM() && len(src) >= 16 && enc.lut != nil {
 		encoded := encodeAsm(dst, src, enc.lut)
 		if encoded > 0 {
 			src = src[(encoded/4)*3:]
@@ -35,7 +41,7 @@ func encode(enc *Encoding, dst, src []byte) {
 
 func decode(enc *Encoding, dst, src []byte) (int, error) {
 	srcLen := len(src)
-	if supportLSX && srcLen >= 24 {
+	if useLoong64ASM() && srcLen >= 24 {
 		remain := srcLen
 		if enc.lut == &encodeStdLut {
 			remain = decodeStdAsm(dst, src)

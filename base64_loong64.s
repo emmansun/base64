@@ -24,7 +24,14 @@ DATA base64_const<>+0x50(SB)/8, $0x3333333333333333 // range 1 end
 DATA base64_const<>+0x58(SB)/8, $0x3333333333333333 // range 1 end
 DATA base64_const<>+0x60(SB)/8, $0x1919191919191919 // range 0 end
 DATA base64_const<>+0x68(SB)/8, $0x1919191919191919 // range 0 end
-GLOBL base64_const<>(SB), (NOPTR+RODATA), $112
+// LASX loop reshuffle mask for 24-byte input (32 bytes total, same layout as AVX2 reshuffle_mask32):
+// Q1 lane: bytes [12..23] → 0x0809070805060405 / 0x0e0f0d0e0b0c0a0b
+// Q0 lane: bytes [0..11]  → 0x0405030401020001 / 0x0a0b090a07080607
+DATA base64_const<>+0x70(SB)/8, $0x0809070805060405
+DATA base64_const<>+0x78(SB)/8, $0x0e0f0d0e0b0c0a0b
+DATA base64_const<>+0x80(SB)/8, $0x0405030401020001
+DATA base64_const<>+0x88(SB)/8, $0x0a0b090a07080607
+GLOBL base64_const<>(SB), (NOPTR+RODATA), $144
 
 DATA decode_const<>+0x00(SB)/8, $0x0804080402011010 // standard decode lut hi
 DATA decode_const<>+0x08(SB)/8, $0x1010101010101010
@@ -67,6 +74,10 @@ TEXT ·encodeAsm(SB),NOSPLIT,$0
 	MOVV lut+48(FP), R8
 
 	MOVV $base64_const<>(SB), R9
+
+	MOVBU ·useLASX(SB), R10
+	BNE R10, R0, lasx
+
 	VMOVQ (0*16)(R9), RESHUFFLE_MASK
 	VMOVQ (1*16)(R9), MULHI_MASK
 	VMOVQ (2*16)(R9), SHIFT_RIGHT_MASK
@@ -105,6 +116,82 @@ done:
 	MOVV R5, ret+56(FP)
 	RET
 
+// LASX path: processes 24 bytes per iteration (32 bytes output)
+lasx:
+	// Load constants into LSX registers then broadcast to LASX high lane
+	VMOVQ (0*16)(R9), V0           // RESHUFFLE_MASK (head: 12-byte layout)
+	XVMOVQ X0, X0.Q2              // broadcast Q0→high lane (xvreplve0.q)
+	VMOVQ (1*16)(R9), V1           // MULHI_MASK
+	XVMOVQ X1, X1.Q2
+	VMOVQ (2*16)(R9), V2           // SHIFT_RIGHT_MASK
+	XVMOVQ X2, X2.Q2
+	VMOVQ (3*16)(R9), V3           // MULLO_MASK
+	XVMOVQ X3, X3.Q2
+	VMOVQ (4*16)(R9), V4           // SHIFT_LEFT_MASK
+	XVMOVQ X4, X4.Q2
+	VMOVQ (5*16)(R9), V5           // RANGE1_END
+	XVMOVQ X5, X5.Q2
+	VMOVQ (6*16)(R9), V6           // RANGE0_END
+	XVMOVQ X6, X6.Q2
+	VMOVQ (R8), V7                 // LUT
+	XVMOVQ X7, X7.Q2
+	// Load loop reshuffle mask (32-byte layout, at offset 7*16)
+	XVMOVQ (7*16)(R9), X13
+
+	MOVV $28, R10
+	MOVV R5, R11                   // save dst pointer
+
+lasx_head:
+	BLTU R7, R10, lasx_tail
+	// Load first 28 bytes: two 16-byte loads, overlap at byte 12
+	VMOVQ (R6), V8                 // bytes [0..15]
+	VMOVQ 12(R6), V9               // bytes [12..27]
+	WORD $0x77ec8128               // xvpermi.q X8, X9, 0x20: X8.Q0=keep, X8.Q1=X9.Q0 → X8={ [12..27] | [0..15] }
+	WORD $0x0d602108               // XVSHUFB X0, X8, X8, X8  // reshuffle (head layout)
+	XVANDV X1, X8, X9
+	XVSRLH X2, X9, X9
+	XVANDV X3, X8, X8
+	XVSLLH X4, X8, X8
+	XVORV X9, X8, X8
+	WORD $0x744c1509               // XVSSUBBU X5, X8, X9
+	WORD $0x740820ca               // XVSLTBU X8, X6, X10
+	XVSUBB X10, X9, X9
+	WORD $0x0d649ce9               // XVSHUFB X9, X7, X7, X9
+	XVADDB X9, X8, X8
+	XVMOVQ X8, (R5)                // store full 256-bit (32 bytes)
+
+	ADDV $28, R6
+	SUBV $28, R7
+	ADDV $32, R5
+
+lasx_loop:
+	BLTU R7, R10, lasx_tail
+	// Load 28 bytes borrowing 4 bytes before current pointer
+	XVMOVQ -4(R6), X8             // bytes [-4..27], 32 bytes total
+	WORD $0x0d66a108               // XVSHUFB X13, X8, X8, X8  // reshuffle (loop layout)
+	XVANDV X1, X8, X9
+	XVSRLH X2, X9, X9
+	XVANDV X3, X8, X8
+	XVSLLH X4, X8, X8
+	XVORV X9, X8, X8
+	WORD $0x744c1509               // XVSSUBBU X5, X8, X9
+	WORD $0x740820ca               // XVSLTBU X8, X6, X10
+	XVSUBB X10, X9, X9
+	WORD $0x0d649ce9               // XVSHUFB X9, X7, X7, X9
+	XVADDB X9, X8, X8
+	XVMOVQ X8, (R5)                // store full 256-bit (32 bytes)
+
+	ADDV $24, R6
+	SUBV $24, R7
+	ADDV $32, R5
+	JMP lasx_loop
+
+lasx_tail:
+	// Fall back to LSX for remaining bytes (< 28 bytes left)
+	MOVV $16, R10
+	BGEU R7, R10, loop
+	JMP done
+
 #undef RESHUFFLE_MASK
 #undef SHIFT_RIGHT_MASK
 #undef MULHI_MASK
@@ -130,6 +217,10 @@ TEXT ·decodeStdAsm(SB),NOSPLIT,$0
 	MOVV src_len+32(FP), R7
 
 	MOVV $decode_const<>(SB), R8
+
+	MOVBU ·useLASX(SB), R10
+	BNE R10, R0, stddec_lasx
+
 	VMOVQ (0*16)(R8), LUT_HI
 	VMOVQ (1*16)(R8), LUT_LO
 	VMOVQ (2*16)(R8), DECODE_END
@@ -173,6 +264,67 @@ done:
 	MOVV R7, ret+48(FP)
 	RET
 
+// LASX path: processes 32 bytes input → 24 bytes output per iteration
+stddec_lasx:
+	// Load constants into LSX registers then broadcast to LASX high lane
+	VMOVQ (0*16)(R8), V1           // LUT_HI
+	XVMOVQ X1, X1.Q2
+	VMOVQ (1*16)(R8), V2           // LUT_LO
+	XVMOVQ X2, X2.Q2
+	VMOVQ (2*16)(R8), V3           // DECODE_END
+	XVMOVQ X3, X3.Q2
+	VMOVQ (3*16)(R8), V4           // LUT_ROLL
+	XVMOVQ X4, X4.Q2
+	VMOVQ (8*16)(R8), V5           // RESHUFFLE_CONST0
+	XVMOVQ X5, X5.Q2
+	VMOVQ (9*16)(R8), V6           // RESHUFFLE_CONST1
+	XVMOVQ X6, X6.Q2
+	VMOVQ (10*16)(R8), V7          // RESHUFFLE_MASK
+	XVMOVQ X7, X7.Q2
+	MOVV $40, R10
+stddec_lasx_loop:
+	BLTU R7, R10, stddec_lasx_tail
+		XVMOVQ (R6), X8                // load 32 bytes input
+		// validate the input data
+		XVSRLB $4, X8, X9              // high nibble
+		XVANDB $0xf, X8, X10           // low nibble
+		WORD $0x0d64842b               // XVSHUFB X9, X1, X1, X11  (hi nibble lookup)
+		WORD $0x0d65084a               // XVSHUFB X10, X2, X2, X10 (lo nibble lookup)
+		XVANDV X11, X10, X10
+		XVSETEQV X10, FCC0
+		BFPF stddec_lasx_done
+
+		// translate
+		XVSEQB X8, X3, X10            // compare DECODE_END(0x2F) with input bytes
+		XVADDB X9, X10, X10           // add eq_2F with hi_nibbles
+		WORD $0x0d65108a               // XVSHUFB X10, X4, X4, X10 (lut roll lookup)
+		XVADDB X10, X8, X8            // add delta values to input
+
+		// reshuffle output bytes
+		XVMULWEVHBU X8, X5, X9
+		WORD $0x74b620a9               // xvmaddwod.h.bu X8, X5, X9
+
+		XVMULWEVWHU X9, X6, X8
+		WORD $0x74b6a4c8               // xvmaddwod.w.hu X9, X6, X8
+
+		WORD $0x0d63a108               // XVSHUFB X7, X8, X8, X8  (output reshuffle)
+		VMOVQ V8, (R5)                 // store Q0: bytes [0..11] valid, [12..15]=0
+		WORD $0x77ec0d09               // xvpermi.q X9, X8, 0x03: X9.Q0 = X8.Q1
+		VMOVQ V9, 12(R5)              // store at +12: bytes [12..23] valid, [24..27]=0
+
+		ADDV $24, R5
+		SUBV $32, R7
+		ADDV $32, R6
+		JMP stddec_lasx_loop
+
+stddec_lasx_tail:
+	// Fall back to LSX path for remaining bytes
+	MOVV $24, R10
+	BGEU R7, R10, loop
+stddec_lasx_done:
+	MOVV R7, ret+48(FP)
+	RET
+
 //func decodeUrlAsmdst, src []byte) int
 TEXT ·decodeUrlAsm(SB),NOSPLIT,$0
 	MOVV dst_base+0(FP), R5
@@ -180,6 +332,10 @@ TEXT ·decodeUrlAsm(SB),NOSPLIT,$0
 	MOVV src_len+32(FP), R7
 
 	MOVV $decode_const<>(SB), R8
+
+	MOVBU ·useLASX(SB), R10
+	BNE R10, R0, urldec_lasx
+
 	VMOVQ (4*16)(R8), LUT_HI
 	VMOVQ (5*16)(R8), LUT_LO
 	VMOVQ (6*16)(R8), DECODE_END
@@ -220,5 +376,66 @@ loop:
 		ADDV $16, R6, R6
 		BGEU R7, R10, loop
 done:
+	MOVV R7, ret+48(FP)
+	RET
+
+// LASX path: processes 32 bytes input → 24 bytes output per iteration
+urldec_lasx:
+	// Load constants into LSX registers then broadcast to LASX high lane
+	VMOVQ (4*16)(R8), V1           // LUT_HI
+	XVMOVQ X1, X1.Q2
+	VMOVQ (5*16)(R8), V2           // LUT_LO
+	XVMOVQ X2, X2.Q2
+	VMOVQ (6*16)(R8), V3           // DECODE_END
+	XVMOVQ X3, X3.Q2
+	VMOVQ (7*16)(R8), V4           // LUT_ROLL
+	XVMOVQ X4, X4.Q2
+	VMOVQ (8*16)(R8), V5           // RESHUFFLE_CONST0
+	XVMOVQ X5, X5.Q2
+	VMOVQ (9*16)(R8), V6           // RESHUFFLE_CONST1
+	XVMOVQ X6, X6.Q2
+	VMOVQ (10*16)(R8), V7          // RESHUFFLE_MASK
+	XVMOVQ X7, X7.Q2
+	MOVV $40, R10
+urldec_lasx_loop:
+	BLTU R7, R10, urldec_lasx_tail
+		XVMOVQ (R6), X8                // load 32 bytes input
+		// validate the input data
+		XVSRLB $4, X8, X9              // high nibble
+		XVANDB $0xf, X8, X10           // low nibble
+		WORD $0x0d64842b               // XVSHUFB X9, X1, X1, X11  (hi nibble lookup)
+		WORD $0x0d65084a               // XVSHUFB X10, X2, X2, X10 (lo nibble lookup)
+		XVANDV X11, X10, X10
+		XVSETEQV X10, FCC0
+		BFPF urldec_lasx_done
+
+		// translate
+		WORD $0x7408206a               // XVSLTBU X8, X3, X10 (compare 0x5E with input)
+		XVSUBB X10, X9, X10            // sub gt_5E with hi_nibbles
+		WORD $0x0d65108a               // XVSHUFB X10, X4, X4, X10 (lut roll lookup)
+		XVADDB X10, X8, X8            // add delta values to input
+
+		// reshuffle output bytes
+		XVMULWEVHBU X8, X5, X9
+		WORD $0x74b620a9               // xvmaddwod.h.bu X8, X5, X9
+
+		XVMULWEVWHU X9, X6, X8
+		WORD $0x74b6a4c8               // xvmaddwod.w.hu X9, X6, X8
+
+		WORD $0x0d63a108               // XVSHUFB X7, X8, X8, X8  (output reshuffle)
+		VMOVQ V8, (R5)                 // store Q0: bytes [0..11] valid, [12..15]=0
+		WORD $0x77ec0d09               // xvpermi.q X9, X8, 0x03: X9.Q0 = X8.Q1
+		VMOVQ V9, 12(R5)              // store at +12: bytes [12..23] valid, [24..27]=0
+
+		ADDV $24, R5
+		SUBV $32, R7
+		ADDV $32, R6
+		JMP urldec_lasx_loop
+
+urldec_lasx_tail:
+	// Fall back to LSX path for remaining bytes
+	MOVV $24, R10
+	BGEU R7, R10, loop
+urldec_lasx_done:
 	MOVV R7, ret+48(FP)
 	RET
