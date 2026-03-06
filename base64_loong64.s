@@ -150,7 +150,7 @@ lasx_head:
 	// Load first 28 bytes: two 16-byte loads, overlap at byte 12
 	VMOVQ (R6), V8                 // bytes [0..15]
 	VMOVQ 12(R6), V9               // bytes [12..27]
-	WORD $0x77ec8128               // xvpermi.q X8, X9, 0x20: X8.Q0=keep, X8.Q1=X9.Q0 → X8={ [12..27] | [0..15] }
+	WORD $0x77ec0928               // xvpermi.q X8, X9, 0x02: X8.Q0=keep, X8.Q1=X9.Q0 → X8={ [0..15] | [12..27] }
 	WORD $0x0d602108               // XVSHUFB X0, X8, X8, X8  // reshuffle (head layout)
 	XVANDV X2, X8, X9
 	XVSRLH X1, X9, X9
@@ -313,7 +313,7 @@ stddec_lasx_loop:
 
 		WORD $0x0d63a108               // XVSHUFB X7, X8, X8, X8  (output reshuffle)
 		VMOVQ V8, (R5)                 // store Q0: bytes [0..11] valid, [12..15]=0
-		WORD $0x77ec0d09               // xvpermi.q X9, X8, 0x03: X9.Q0 = X8.Q1
+WORD $0x77ecc109               // xvpermi.q X9, X8, 0x30: X9.Q0 = X8.Q1
 		VMOVQ V9, 12(R5)              // store at +12: bytes [12..23] valid, [24..27]=0
 
 		ADDV $24, R5
@@ -428,7 +428,7 @@ urldec_lasx_loop:
 
 		WORD $0x0d63a108               // XVSHUFB X7, X8, X8, X8  (output reshuffle)
 		VMOVQ V8, (R5)                 // store Q0: bytes [0..11] valid, [12..15]=0
-		WORD $0x77ec0d09               // xvpermi.q X9, X8, 0x03: X9.Q0 = X8.Q1
+WORD $0x77ecc109               // xvpermi.q X9, X8, 0x30: X9.Q0 = X8.Q1
 		VMOVQ V9, 12(R5)              // store at +12: bytes [12..23] valid, [24..27]=0
 
 		ADDV $24, R5
