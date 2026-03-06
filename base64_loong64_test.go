@@ -19,7 +19,7 @@ func TestStdEncodeAsm(t *testing.T) {
 		{"abcdefghijkl0000", "YWJjZGVmZ2hpamts"},
 		{"\x2b\xf7\xcc\x27\x01\xfe\x43\x97\xb4\x9e\xbe\xed\x5a\xcc\x70\x90", "K/fMJwH+Q5e0nr7t"},
 		{"abcdefghijklabcdefghijkl0000", "YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts"},
-		{"abcdefghijklmnopqrstuvwxyabc", "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eWFiYw=="},
+		{"abcdefghijklmnopqrstuvwxyabc", "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4"},
 		{"abcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijkl", "YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts"},
 		{"abcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijkl", "YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts"},
 		{"abcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijkl", "YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts"},
@@ -84,7 +84,7 @@ func TestURLEncodeAsm(t *testing.T) {
 		{"!?$*&()'-=@~0000", "IT8kKiYoKSctPUB-"},
 		{"\x2b\xf7\xcc\x27\x01\xfe\x43\x97\xb4\x9e\xbe\xed\x5a\xcc\x70\x90", "K_fMJwH-Q5e0nr7t"},
 		{"!?$*&()'-=@~!?$*&()'-=@~0000", "IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-"},
-		{"!?$*&()'-=@~abcdefghijklmnop", "IT8kKiYoKSctPUB-YWJjZGVmZ2hpamtsbW5vcA"},
+		{"!?$*&()'-=@~abcdefghijklmnop", "IT8kKiYoKSctPUB-YWJjZGVmZ2hpamts"},
 	}
 	for _, p := range pairs {
 		src := []byte(p.decoded)
@@ -329,6 +329,9 @@ func TestLoong64AsmBoundaryConsistency(t *testing.T) {
 		raw := bytes.Repeat([]byte("abcdefghijklmnopqrstuvwxy"), (rawLen+24)/25)[:rawLen]
 		src := make([]byte, StdEncoding.EncodedLen(len(raw)))
 		StdEncoding.Encode(src, raw)
+		if len(src) < n {
+			src = append(src, bytes.Repeat([]byte("A"), n-len(src))...)
+		}
 		src = src[:n]
 
 		dstLSX := make([]byte, StdEncoding.DecodedLen(len(src)))
