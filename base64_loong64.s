@@ -164,8 +164,8 @@ lasx_head:
 	XVADDB X9, X8, X8
 	XVMOVQ X8, (R5)                // store full 256-bit (32 bytes)
 
-	ADDV $28, R6
-	SUBV $28, R7
+	ADDV $24, R6
+	SUBV $24, R7
 	ADDV $32, R5
 
 lasx_loop:
