@@ -118,27 +118,29 @@ DATA enc512_url_lut<>+0x38(SB)/8, $0x5F2D393837363534
 GLOBL enc512_url_lut<>(SB), (NOPTR+RODATA), $64
 
 // AVX512 encode byte-spread table: for each of 64 output slots, which input byte (0-47) to read.
-// Pattern: out[4k+0]=in[3k+1], out[4k+1]=in[3k+2], out[4k+2]=in[3k+0], out[4k+3]=in[3k+1]
-// (matches the existing mulhi/mullo [b c a b] reshuffle convention)
-DATA enc512_spread<>+0x00(SB)/8, $0x0403050401000201
-DATA enc512_spread<>+0x08(SB)/8, $0x0A090B0A07060807
-DATA enc512_spread<>+0x10(SB)/8, $0x100F11100D0C0E0D
-DATA enc512_spread<>+0x18(SB)/8, $0x1615171613121413
-DATA enc512_spread<>+0x20(SB)/8, $0x1C1B1D1C19181A19
-DATA enc512_spread<>+0x28(SB)/8, $0x222123221F1E201F
-DATA enc512_spread<>+0x30(SB)/8, $0x2827292825242625
-DATA enc512_spread<>+0x38(SB)/8, $0x2E2D2F2E2B2A2C2B
+// Pattern: out[4k+0]=in[3k+1], out[4k+1]=in[3k+0], out[4k+2]=in[3k+2], out[4k+3]=in[3k+1]
+// (matches the existing mulhi/mullo [b,a,c,b] reshuffle convention, same as SSE3 reshuffle_mask)
+DATA enc512_spread<>+0x00(SB)/8, $0x0405030401020001
+DATA enc512_spread<>+0x08(SB)/8, $0x0A0B090A07080607
+DATA enc512_spread<>+0x10(SB)/8, $0x10110F100D0E0C0D
+DATA enc512_spread<>+0x18(SB)/8, $0x1617151613141213
+DATA enc512_spread<>+0x20(SB)/8, $0x1C1D1B1C191A1819
+DATA enc512_spread<>+0x28(SB)/8, $0x222321221F201E1F
+DATA enc512_spread<>+0x30(SB)/8, $0x2829272825262425
+DATA enc512_spread<>+0x38(SB)/8, $0x2E2F2D2E2B2C2A2B
 GLOBL enc512_spread<>(SB), (NOPTR+RODATA), $64
 
 // AVX512 decode output compress table: uses VPERMB to compact 64 bytes → 48 bytes.
-// After VPMADDUBSW+VPMADDWD+VPSHUFB (per-lane), valid bytes are at [0,1,2,4,5,6,8,9,10,12,13,14]
-// per 16-byte lane; bytes [3,7,11,15] are junk. This table's first 48 entries pick just the valid bytes.
-DATA dec512_compress<>+0x00(SB)/8, $0x0908060504020100
-DATA dec512_compress<>+0x08(SB)/8, $0x141211100E0D0C0A
-DATA dec512_compress<>+0x10(SB)/8, $0x1E1D1C1A19181615
-DATA dec512_compress<>+0x18(SB)/8, $0x2928262524222120
-DATA dec512_compress<>+0x20(SB)/8, $0x343231302E2D2C2A
-DATA dec512_compress<>+0x28(SB)/8, $0x3E3D3C3A39383635
+// After VPMADDUBSW+VPMADDWD+VPSHUFB (per-lane), valid decoded bytes are at positions [0..11]
+// in each 16-byte lane (contiguous); bytes [12..15] are zero (VPSHUFB 0xFF mask entries).
+// This table's first 48 entries pick 12 valid bytes from each of the 4 lanes:
+// lane0=[0..11], lane1=[16..27], lane2=[32..43], lane3=[48..59]
+DATA dec512_compress<>+0x00(SB)/8, $0x0706050403020100
+DATA dec512_compress<>+0x08(SB)/8, $0x131211100B0A0908
+DATA dec512_compress<>+0x10(SB)/8, $0x1B1A191817161514
+DATA dec512_compress<>+0x18(SB)/8, $0x2726252423222120
+DATA dec512_compress<>+0x20(SB)/8, $0x333231302B2A2928
+DATA dec512_compress<>+0x28(SB)/8, $0x3B3A393837363534
 DATA dec512_compress<>+0x30(SB)/8, $0x0000000000000000
 DATA dec512_compress<>+0x38(SB)/8, $0x0000000000000000
 GLOBL dec512_compress<>(SB), (NOPTR+RODATA), $64
