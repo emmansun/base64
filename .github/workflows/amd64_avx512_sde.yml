@@ -2,8 +2,8 @@
 # Intel SDE emulates Ice Lake CPUID on any x86-64 host, so cpu.X86.HasAVX512VBMI
 # returns true at runtime even on runners without physical AVX512 hardware.
 #
-# SDE download: https://www.intel.com/content/www/us/en/download/684897/intel-software-development-emulator.html
-# Update SDE_URL / SDE_DIR / SDE_SHA256 below when a new release is available.
+# The download URL is extracted dynamically from Intel's download page (data-href
+# attribute), following the same technique used by simd-everywhere/simde.
 
 name: amd64-avx512-sde
 
@@ -14,9 +14,8 @@ on:
     branches: [ "main" ]
 
 env:
-  SDE_URL: https://downloadmirror.intel.com/684897/sde-external-10.7.0-2026-02-18-lin.tar.xz
-  SDE_DIR: sde-external-10.7.0-2026-02-18-lin
-  SDE_SHA256: CA3D4086DE4ACB3FAEDF9F57B541C6936B7D5E19AE2BF763B6EA933573A0A217
+  SDE_DOWNLOAD_PAGE: https://www.intel.com/content/www/us/en/download/684897/intel-software-development-emulator.html
+  SDE_INSTALL_DIR: /opt/intel/sde
 
 jobs:
 
@@ -41,23 +40,27 @@ jobs:
       id: cache-sde
       uses: actions/cache@v4
       with:
-        path: ${{ env.SDE_DIR }}
-        key: intel-sde-${{ env.SDE_DIR }}
+        path: ${{ env.SDE_INSTALL_DIR }}
+        key: intel-sde-${{ env.SDE_DOWNLOAD_PAGE }}
 
-    - name: Download Intel SDE
+    - name: Download and install Intel SDE
       if: steps.cache-sde.outputs.cache-hit != 'true'
       run: |
-        curl -L -o sde.tar.xz "$SDE_URL"
-        echo "$SDE_SHA256  sde.tar.xz" | sha256sum -c
-        tar -xf sde.tar.xz
+        URL="$(curl -sL "${SDE_DOWNLOAD_PAGE}" | \
+          grep -oP '(?<=data-href=")(https://[^"]+)/sde-external-([0-9.\-]+)-lin\.tar\.xz' | \
+          head -n1)"
+        echo "Downloading SDE from: ${URL}"
+        mkdir -p "${SDE_INSTALL_DIR}"
+        curl -sL "${URL}" | tar --strip-components 1 -JxC "${SDE_INSTALL_DIR}"
 
     - name: Build test binary
       run: go test -c -o base64.test .
 
     - name: Test AVX512 VBMI (via Intel SDE, emulating Ice Lake)
       # -icl: emulate Ice Lake (AVX512F + AVX512BW + AVX512VBMI)
-      run: ${{ env.SDE_DIR }}/sde64 -icl -- ./base64.test -test.run 'AVX512' -test.v
+      run: ${SDE_INSTALL_DIR}/sde64 -icl -- ./base64.test -test.run 'AVX512' -test.v
 
     - name: Benchmark AVX512 VBMI (via Intel SDE, 1 iteration each)
-      run: ${{ env.SDE_DIR }}/sde64 -icl -- ./base64.test -test.bench 'AVX512' -test.benchtime 1x -test.run '^$' -test.v
+      run: ${SDE_INSTALL_DIR}/sde64 -icl -- ./base64.test -test.bench 'AVX512' -test.benchtime 1x -test.run '^$' -test.v
+
 
