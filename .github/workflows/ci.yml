@@ -34,3 +34,34 @@ jobs:
         files: ./coverage1.txt,./coverage2.txt
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  # AVX512 VBMI tests run on a separate job.
+  # GitHub-hosted ubuntu-latest runners do not guarantee AVX512 VBMI support.
+  # AVX512-specific tests use t.Skip when the CPU feature is absent, so this
+  # job never fails on unsupported hardware — it just reports skipped tests.
+  # To actually exercise the AVX512 path, run on a self-hosted runner with an
+  # Ice Lake / Tiger Lake / Rocket Lake / Zen 5 CPU, or use a cloud instance
+  # such as AWS c6i / m6i (Ice Lake).
+  avx512:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goVer: ['1.25']
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v5
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: ${{ matrix.goVer }}
+
+    - name: Print CPU flags
+      run: grep -m1 'flags' /proc/cpuinfo | tr ' ' '\n' | grep -E 'avx512' || echo "No AVX512 flags found"
+
+    - name: Test AVX512 (skips gracefully if CPU lacks AVX512 VBMI)
+      run: go test -v -run 'AVX512' ./...
+
+    - name: Benchmark AVX512 (skips gracefully if CPU lacks AVX512 VBMI)
+      run: go test -v -bench 'AVX512' -benchtime=1x -run '^$' ./...
+

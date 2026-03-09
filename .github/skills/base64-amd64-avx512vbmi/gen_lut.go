@@ -1,0 +1,131 @@
+//go:build ignore
+
+package main
+
+import "fmt"
+
+func le64(b []byte) string {
+	var val uint64
+	for i, byt := range b {
+		val |= uint64(byt) << uint(i*8)
+	}
+	return fmt.Sprintf("0x%016X", val)
+}
+
+func main() {
+	// enc512_std_lut
+	stdLut := []byte("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
+	fmt.Println("// enc512_std_lut")
+	for i := 0; i < 64; i += 8 {
+		fmt.Printf("DATA enc512_std_lut<>+0x%02X(SB)/8, $%s\n", i, le64(stdLut[i:i+8]))
+	}
+	fmt.Println()
+
+	// enc512_url_lut
+	urlLut := make([]byte, 64)
+	copy(urlLut, stdLut)
+	urlLut[62] = '-'
+	urlLut[63] = '_'
+	fmt.Println("// enc512_url_lut")
+	for i := 0; i < 64; i += 8 {
+		fmt.Printf("DATA enc512_url_lut<>+0x%02X(SB)/8, $%s\n", i, le64(urlLut[i:i+8]))
+	}
+	fmt.Println()
+
+	// enc512_spread: out[4k+j] = in[3k + [1,2,0,1][j]]
+	offsets := []int{1, 2, 0, 1}
+	spread := make([]byte, 64)
+	for k := 0; k < 16; k++ {
+		for j := 0; j < 4; j++ {
+			spread[k*4+j] = byte(3*k + offsets[j])
+		}
+	}
+	fmt.Println("// enc512_spread")
+	for i := 0; i < 64; i += 8 {
+		fmt.Printf("DATA enc512_spread<>+0x%02X(SB)/8, $%s\n", i, le64(spread[i:i+8]))
+	}
+	fmt.Println()
+
+	// stddec512_lut_lo: [0..63] -> 0xFF illegal, 6-bit value for legal
+	lutLo := make([]byte, 64)
+	for i := range lutLo {
+		lutLo[i] = 0xFF
+	}
+	lutLo['+'] = 62
+	lutLo['/'] = 63
+	for c := '0'; c <= '9'; c++ {
+		lutLo[c] = byte(52 + c - '0')
+	}
+	fmt.Println("// stddec512_lut_lo")
+	for i := 0; i < 64; i += 8 {
+		fmt.Printf("DATA stddec512_lut_lo<>+0x%02X(SB)/8, $%s\n", i, le64(lutLo[i:i+8]))
+	}
+	fmt.Println()
+
+	// stddec512_lut_hi: [64..127]
+	lutHi := make([]byte, 64)
+	for i := range lutHi {
+		lutHi[i] = 0xFF
+	}
+	for c := 'A'; c <= 'Z'; c++ {
+		lutHi[c-64] = byte(c - 'A')
+	}
+	for c := 'a'; c <= 'z'; c++ {
+		lutHi[c-64] = byte(26 + c - 'a')
+	}
+	fmt.Println("// stddec512_lut_hi")
+	for i := 0; i < 64; i += 8 {
+		fmt.Printf("DATA stddec512_lut_hi<>+0x%02X(SB)/8, $%s\n", i, le64(lutHi[i:i+8]))
+	}
+	fmt.Println()
+
+	// urldec512_lut_lo
+	urlLutLo := make([]byte, 64)
+	for i := range urlLutLo {
+		urlLutLo[i] = 0xFF
+	}
+	urlLutLo['-'] = 62
+	for c := '0'; c <= '9'; c++ {
+		urlLutLo[c] = byte(52 + c - '0')
+	}
+	fmt.Println("// urldec512_lut_lo")
+	for i := 0; i < 64; i += 8 {
+		fmt.Printf("DATA urldec512_lut_lo<>+0x%02X(SB)/8, $%s\n", i, le64(urlLutLo[i:i+8]))
+	}
+	fmt.Println()
+
+	// urldec512_lut_hi
+	urlLutHi := make([]byte, 64)
+	for i := range urlLutHi {
+		urlLutHi[i] = 0xFF
+	}
+	for c := 'A'; c <= 'Z'; c++ {
+		urlLutHi[c-64] = byte(c - 'A')
+	}
+	for c := 'a'; c <= 'z'; c++ {
+		urlLutHi[c-64] = byte(26 + c - 'a')
+	}
+	urlLutHi['_'-64] = 63
+	fmt.Println("// urldec512_lut_hi")
+	for i := 0; i < 64; i += 8 {
+		fmt.Printf("DATA urldec512_lut_hi<>+0x%02X(SB)/8, $%s\n", i, le64(urlLutHi[i:i+8]))
+	}
+	fmt.Println()
+
+	// dec512_compress
+	compress := make([]byte, 64)
+	src := []int{0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14}
+	idx := 0
+	for lane := 0; lane < 4; lane++ {
+		base := lane * 16
+		for _, off := range src {
+			compress[idx] = byte(base + off)
+			idx++
+		}
+	}
+	// last 16 bytes: fill with 0
+	fmt.Println("// dec512_compress")
+	for i := 0; i < 64; i += 8 {
+		fmt.Printf("DATA dec512_compress<>+0x%02X(SB)/8, $%s\n", i, le64(compress[i:i+8]))
+	}
+}
