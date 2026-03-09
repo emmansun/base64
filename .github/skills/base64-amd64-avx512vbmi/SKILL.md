@@ -185,6 +185,7 @@ AVX512 路径通过读取该 lut 的 byte[12] 来判断 std/url：
 
 ```asm
 avx512:
+    MOVQ SI, R9       // save lut pointer for AVX2 tail fallback
     MOVBLZX 12(SI), R8
     CMPB R8, $0xED
     JNE avx512_url_enc
@@ -194,8 +195,10 @@ avx512_url_enc:
     VMOVDQU32 enc512_url_lut<>(SB), Z4
 avx512_enc_start:
     VMOVDQU32 enc512_spread<>(SB), Z5
-    VBROADCASTI32X4 mulhi_mask<>(SB), Z6
-    ...
+    VBROADCASTI32X4 mulhi_mask<>(SB), Z7   // matches AVX2 Y7
+    VBROADCASTI32X4 mulhi_const<>(SB), Z8  // matches AVX2 Y8
+    VBROADCASTI32X4 mullo_mask<>(SB), Z9   // matches AVX2 Y9
+    VBROADCASTI32X4 mullo_const<>(SB), Z10 // matches AVX2 Y10
     XORQ SI, SI     // SI 复用为输出字节偏移
 ```
 
@@ -207,10 +210,10 @@ avx512_enc_start:
 Step 1: VMOVDQU32 (BX), Z0        // 加载 64 字节（前 48 有效）
 Step 2: VPERMB Z0, Z5, Z0         // 用 enc512_spread 重排为 [b a c b] 模式（64→64，每 4 字节对应 3 源字节）
 Step 3: mulhi/mullo 提取 6-bit 索引
-  VPANDD Z6, Z0, Z1               // Z1 = in & mulhi_mask
-  VPMULHUW Z7, Z1, Z1             // Z1 = PMULHUW(Z1, mulhi_const)
-  VPANDD Z8, Z0, Z0               // Z0 = in & mullo_mask
-  VPMULLW Z9, Z0, Z0              // Z0 = PMULLW(Z0, mullo_const)
+  VPANDD Z7, Z0, Z1               // Z1 = in & mulhi_mask
+  VPMULHUW Z8, Z1, Z1             // Z1 = PMULHUW(Z1, mulhi_const)
+  VPANDD Z9, Z0, Z0               // Z0 = in & mullo_mask
+  VPMULLW Z10, Z0, Z0             // Z0 = PMULLW(Z0, mullo_const)
   VPORD Z1, Z0, Z0                // Z0 = 64 个 6-bit 索引
 Step 4: VPERMB Z4, Z0, Z0         // 查 64 字节 LUT，得到 64 个 ASCII 字符
 Step 5: VMOVDQU32 Z0, (AX)(SI*1)  // 存储 64 字节
@@ -227,10 +230,10 @@ out[4k+0]=in[3k+1], out[4k+1]=in[3k+0], out[4k+2]=in[3k+2], out[4k+3]=in[3k+1]
 
 不定义专用 64 字节常量，直接广播已有 16 字节 SSE/AVX2 常量：
 ```asm
-VBROADCASTI32X4 mulhi_mask<>(SB), Z6   // 将 16 字节广播到 64 字节（4 lane 重复）
-VBROADCASTI32X4 mulhi_const<>(SB), Z7
-VBROADCASTI32X4 mullo_mask<>(SB), Z8
-VBROADCASTI32X4 mullo_const<>(SB), Z9
+VBROADCASTI32X4 mulhi_mask<>(SB), Z7   // 将 16 字节广播到 64 字节（4 lane 重复）；与 AVX2 Y7 共用低256位
+VBROADCASTI32X4 mulhi_const<>(SB), Z8  // 与 AVX2 Y8 共用低256位
+VBROADCASTI32X4 mullo_mask<>(SB), Z9   // 与 AVX2 Y9 共用低256位
+VBROADCASTI32X4 mullo_const<>(SB), Z10 // 与 AVX2 Y10 共用低256位
 ```
 
 **encode LUT 常量（Standard，64 字节）：**
@@ -270,9 +273,9 @@ Step 6: 存储 48 字节
 
 **Reshuffle 常量复用（VBROADCASTI32X4）：**
 ```asm
-VBROADCASTI32X4 dec_reshuffle_const0<>(SB), Z6
-VBROADCASTI32X4 dec_reshuffle_const1<>(SB), Z7
-VBROADCASTI32X4 dec_reshuffle_mask<>(SB), Z8
+VBROADCASTI32X4 dec_reshuffle_const0<>(SB), Z6  // 与 AVX2 Y6 共用低256位
+VBROADCASTI32X4 dec_reshuffle_const1<>(SB), Z7  // 与 AVX2 Y7 共用低256位
+VBROADCASTI32X4 dec_reshuffle_mask<>(SB), Z8    // 与 AVX2 Y8 共用低256位
 ```
 
 **Decode LUT 结构（Standard，各 64 字节）：**
@@ -326,7 +329,7 @@ go run gen_lut.go
 | `stddec512_lut_hi` | 64 字节 | decode Standard LUT 高段（ASCII 64..127） |
 | `urldec512_lut_lo` | 64 字节 | decode URL-safe LUT 低段 |
 | `urldec512_lut_hi` | 64 字节 | decode URL-safe LUT 高段 |
-| `dec512_compress` | 64 字节 | VPERMB 压缩索引（64→48 字节，每 lane 取 [0,1,2,4,5,6,8,9,10,12,13,14]） |
+| `dec512_compress` | 64 字节 | VPERMB 压缩索引（64→48 字节，每 lane 取连续 [0..11]，共 4 lane） |
 
 **关键实现逻辑：**
 - `le64`：将 8 字节切片按小端序打包为 `uint64`，输出 `0x...` 十六进制字面量（匹配 Go 汇编 `DATA` 语法）
@@ -344,7 +347,9 @@ go run gen_lut.go
 
 **注意（Encode）：** 每轮实际消耗 48 字节输入，但要求 `CX ≥ 64` 是为了 `VMOVDQU32 (BX), Z0` 的安全读取（enc512_spread 索引 0..47 忽略后 16 字节）。
 
-**AVX512 尾部处理：** 当剩余数据不足 64 字节时退出 AVX512 循环，fall through 到 AVX2 tail 或 SSE3 tail。
+**AVX512 尾部处理：** 当剩余数据不足 64 字节（CX < 64）时退出 AVX512 循环，`avx512_done` 判断 CX 是否满足 AVX2 条件（encode ≥16, decode ≥24），若满足则直接跳到 AVX2 内部 label（`avx2_head`/`avx2_loop`），否则返回给 Go 层处理剩余字节。
+
+**关键性质：** 当 CX_initial ≥ 64（入口条件），CX_final（所有 AVX512 轮次后）= CX_initial − N×48，其中 N = ⌊(CX_initial − 16) / 48⌋。可以证明 CX_final ∈ [16, 63]，因此对于 encode 路径，`avx512_ret`（CX < 16）**实际上永远不会被执行**：AVX512 循环后一定会进入 AVX2 fallback。
 
 ## 实现步骤（已全部完成 ✅）
 
@@ -359,61 +364,141 @@ go run gen_lut.go
 
 ### Phase 3: 实现 AVX512 Encode ✅
 6. 定义 encode LUT 常量（std + url，各 64 字节）
-7. 定义 enc512_spread 常量（64 字节，[b c a b] 重排索引）
-8. 复用 mulhi/mullo 16 字节常量（VBROADCASTI32X4 广播）
+7. 定义 enc512_spread 常量（64 字节，[b,a,c,b] 重排索引）
+8. 复用 mulhi/mullo 16 字节常量（VBROADCASTI32X4 广播到 Z7-Z10）
 9. 实现 `avx512` encode 分支：spread → mulhi/mullo → VPERMB → 存储
+   - mulhi/mullo 寄存器用 Z7-Z10（而非 Z6-Z9）以与 AVX2 Y7-Y10 对齐
+   - `MOVQ SI, R9` 在 `XORQ SI, SI` 前备份 lut 指针
 
 ### Phase 4: 实现 AVX512 Decode ✅
 10. 定义 stddec512_lut_lo/hi 和 urldec512_lut_lo/hi（各 64 字节）
 11. 定义 dec512_compress（64 字节压缩表）
-12. 复用 dec_reshuffle_const0/1/mask 16 字节常量（VBROADCASTI32X4 广播）
+12. 复用 dec_reshuffle_const0/1/mask 16 字节常量（VBROADCASTI32X4 广播到 Z6-Z8）
+    - reshuffle 寄存器用 Z6-Z8（而非其他编号）以与 AVX2 Y6-Y8 对齐
 13. 实现 VPERMI2B 校验+翻译 + VPCMPB/KTESTQ 错误检测
 14. 实现 512-bit 宽度 reshuffle + VPERMB 压缩
 15. 存储方式：`VMOVDQU Y0` (32字节) + `VEXTRACTI32X4 $2` + `VMOVDQU X1` (16字节)
 
 ### Phase 5: 优化与测试 ✅
 16. 添加输入长度预检（`CMPQ CX, $64`）避免短输入时加载无用 ZMM 常量
-17. 本地编译验证（`go build ./...`）
-18. 运行测试（`go test -count=1 ./...` → `ok github.com/emmansun/base64`）
+17. `avx512_done` 完善：回退到 AVX2 内部 label，而非直接返回给 Go 层（减少函数调用开销）
+18. 寄存器编号优化（Z7-Z10 encode, Z6-Z8 decode）以与 AVX2 对齐，消除 fallback 时的重复加载
+19. 本地编译验证（`go build ./...`）
+20. 运行测试（`go test -count=1 ./...` → `ok github.com/emmansun/base64`）
 
 ## 寄存器分配规划
 
 ### Encode（AVX512 主循环）
+
+寄存器编号故意选 Z7-Z10 以与 AVX2 路径的 Y7-Y10 对齐，这样在 `avx512_done` 回退到
+`avx2_head` 时无需额外 `VBROADCASTI128` 重新加载 mulhi/mullo 常量（ZMM 低 256 位
+即 YMM，VEX 指令直接复用）。
+
 | 寄存器 | 用途 |
 |--------|------|
 | Z0 | 数据工作寄存器（输入/spread/索引/输出） |
 | Z1 | mulhi 临时寄存器 |
 | Z4 | encode LUT（64 字节，VPERMB 源）：std 或 url |
 | Z5 | enc512_spread（VPERMB 索引表） |
-| Z6 | mulhi_mask（VBROADCASTI32X4 from 16-byte） |
-| Z7 | mulhi_const（VBROADCASTI32X4 from 16-byte） |
-| Z8 | mullo_mask（VBROADCASTI32X4 from 16-byte） |
-| Z9 | mullo_const（VBROADCASTI32X4 from 16-byte） |
-| SI | 输出字节偏移 |
+| Z7 | mulhi_mask（与 AVX2 Y7 共用低256位） |
+| Z8 | mulhi_const（与 AVX2 Y8 共用低256位） |
+| Z9 | mullo_mask（与 AVX2 Y9 共用低256位） |
+| Z10 | mullo_const（与 AVX2 Y10 共用低256位） |
+| SI | AVX512主循环: 输出字节偏移（XORQ 清零）；setup: lut 指针（由 R9 备份） |
 | BX | 输入指针 |
 | CX | 剩余输入字节数 |
 | AX | 输出基址 |
-| R8 | LUT 选择临时寄存器（读取 lut[12] 判断 std/url） |
+| R8 | LUT 选择临时（读取 lut[12] 判断 std/url） |
+| R9 | 备份 lut 指针（`MOVQ SI, R9` 在 XORQ SI 前），供 `avx512_done` 加载 Y13 用 |
 
 ### Decode（AVX512 主循环）
+
+寄存器编号故意选 Z6-Z8 以与 AVX2 路径的 Y6-Y8 对齐，`avx512_done` 回退到
+`avx2_loop` 时无需重新加载 reshuffle 常量。
+
 | 寄存器 | 用途 |
 |--------|------|
 | Z0 | 数据工作寄存器（输入/翻译/reshuffle/压缩） |
-| Z2 | 零寄存器（VPXORD Z2, Z2, Z2） |
+| Z2 | 零寄存器（VPXORD Z2, Z2, Z2，VPCMPB 用） |
+| Z3 | dec512_compress（VPERMB 压缩索引，循环前加载一次） |
 | Z4 | decode LUT low（索引 0..63，VPERMI2B src1） |
 | Z5 | decode LUT high（索引 64..127，VPERMI2B src2） |
-| Z6 | dec_reshuffle_const0（VBROADCASTI32X4） |
-| Z7 | dec_reshuffle_const1（VBROADCASTI32X4） |
-| Z8 | dec_reshuffle_mask（VBROADCASTI32X4） |
+| Z6 | dec_reshuffle_const0（与 AVX2 Y6 共用低256位） |
+| Z7 | dec_reshuffle_const1（与 AVX2 Y7 共用低256位） |
+| Z8 | dec_reshuffle_mask（与 AVX2 Y8 共用低256位） |
 | K1 | error mask（VPCMPB 结果） |
 | X0/Y0 | Z0 的低 128/256 位别名，用于存储 |
 | X1 | VEXTRACTI32X4 $2 提取的 lane 2 |
 
+## AVX512 → AVX2 内部 Fallback 机制
+
+### 设计目标
+
+AVX512 循环退出时（CX < 64），剩余字节由 ASM 内部的 AVX2 代码处理，而不是返回给 Go 层再调用 `encodeGeneric` / `decodeGeneric`。这避免了一次函数调用开销，并使 SIMD 效率最大化。
+
+### Encode fallback (`avx512_done`)
+
+```asm
+avx512_done:
+    // Fall back to AVX2 for the remaining tail (CX in [16..63]).
+    // Y7-Y10 (mulhi/mullo constants) are already valid as the lower 256 bits of Z7-Z10;
+    // no VZEROUPPER needed since AVX2 uses VEX-encoded instructions throughout.
+    CMPQ CX, $16
+    JB avx512_ret
+    VBROADCASTI128 reshuffle_mask<>(SB), Y6
+    VBROADCASTI128 range_0_end<>(SB), Y11
+    VBROADCASTI128 range_1_end<>(SB), Y12
+    VBROADCASTI128 (R9), Y13    // lut pointer saved in R9 before XORQ SI
+    JMP avx2_head               // Y7-Y10 already valid from Z7-Z10
+avx512_ret:
+    MOVQ SI, ret+56(FP)
+    VZEROUPPER
+    RET
+```
+
+- `Y6`/`Y11`/`Y12`/`Y13` 是 `avx2_head` 中用到的剩余寄存器（Y7-Y10 已由 Z7-Z10 低256位提供）
+- R9 在 `avx512` 入口 `MOVQ SI, R9` 保存 lut 指针，避免 `XORQ SI, SI`（清零输出偏移）后丢失
+- **无 `VZEROUPPER`**：因为紧接着执行 AVX2 VEX 指令，不需要清除 ZMM 上半部分
+
+### Decode fallback (`avx512_done`)
+
+```asm
+avx512_done:
+    // Fall back to AVX2 for the remaining tail (CX in [24..63]).
+    // Y6-Y8 (dec_reshuffle_const0/1, dec_reshuffle_mask) are already valid as
+    // the lower 256 bits of Z6-Z8; no VZEROUPPER needed.
+    CMPQ CX, $24
+    JB avx512_ret
+    VBROADCASTI128 nibble_mask<>(SB), Y9
+    VBROADCASTI128 stddec_lut_hi<>(SB), Y10
+    VBROADCASTI128 stddec_lut_lo<>(SB), Y11
+    VBROADCASTI128 stddec_lut_roll<>(SB), Y12
+    JMP avx2_loop               // Y6-Y8 already valid from Z6-Z8
+avx512_ret:
+    MOVQ CX, ret+48(FP)
+    VZEROUPPER
+    RET
+```
+
+- `Y9`/`Y10`/`Y11`/`Y12` 是 `avx2_loop` 需要的其余寄存器（Y6-Y8 已由 Z6-Z8 低256位提供）
+- URL decode 另需 `VBROADCASTI128 url_const_5e<>(SB), Y13`
+
+### 寄存器复用的关键原理
+
+`VBROADCASTI32X4 xmm_mem<>(SB), Z7` 将 16 字节常量广播到 ZMM 的全4个 128-bit lane。执行后，`Z7` 的低256位 = `Y7` = 2 lane 重复的相同常量，完全等同于 `VBROADCASTI128 xmm_mem<>(SB), Y7` 的结果。因此，切换到 VEX-编码的 AVX2 指令后，`Y7`～`Y10`（encode）或 `Y6`～`Y8`（decode）无需重新加载。
+
+### 关键不变式
+
+当 CX_initial ≥ 64 时（进入 AVX512 循环的前提），所有轮次执行完后有：
+$$\text{CX\_final} = \text{CX\_initial} - N \times 48 \in [16, 63]$$
+其中 N = ⌊(CX_initial − 16) / 48⌋。因为 CX_final ≥ 16，`avx512_ret` 路径在 encode 中**永远不会被执行**（dead code in practice）。Decode 中 CX_final ∈ [0, 63]（每轮消耗64字节），若能整除则 CX_final=0 < 24 → `avx512_ret` 会执行（意味着所有数据已处理完毕）。
+
 ## 注意事项
 
 ### VZEROUPPER
-- AVX512 指令使用 ZMM 寄存器，执行完毕后**必须**调用 `VZEROUPPER` 清除上半部分
-- 现有 AVX2 路径已有 `VZEROUPPER`，AVX512 分支同样需要
+- AVX512 指令使用 ZMM 寄存器，直接返回前**必须**调用 `VZEROUPPER` 清除 ZMM 上半部分
+- **AVX512 fallback 到 AVX2 时不需要 `VZEROUPPER`**：紧接着执行的 AVX2 VEX 指令不受 ZMM 上半部分值影响
+- `avx512_ret`（直接 RET 路径）需要 `VZEROUPPER`；`avx512_done → avx2_head/loop` 路径不需要
 
 ### 64 字节对齐
 - ZMM 加载/存储（VMOVDQU32/VMOVDQU64）不要求 64 字节对齐

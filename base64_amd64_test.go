@@ -12,69 +12,59 @@ import (
 )
 
 // TestAVX512StdEncodeAsm verifies the AVX512 VBMI encode path for standard base64.
+// encodeAsm internally falls back to AVX2 for tail bytes, so the return value
+// includes both AVX512 rounds and AVX2 tail bytes processed.
 func TestAVX512StdEncodeAsm(t *testing.T) {
 	if !useAVX512VBMI {
 		t.Skip("skip AVX512 VBMI encode test: AVX512 VBMI not supported")
 	}
-	pairs := []testpair{
-		// 64 bytes input (48 useful + 16 tail) → 1 AVX512 round → 64 output bytes
-		// AVX512 processes src[0:48], encodeAsm returns 64; the 16-byte tail is left for encodeGeneric.
-		{"abcdefghijklabcdefghijklabcdefghijklabcdefghijkl0000000000000000",
-			"YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts"},
-		// 112 bytes input (96 useful + 16 tail) → 2 AVX512 rounds → 128 output bytes
-		{"abcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijkl0000000000000000",
-			"YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts"},
-	}
-	// Use only AVX512, temporarily disable AVX2
+	// Use only AVX512 (Go-level); AVX2 fallback inside encodeAsm is unconditional.
 	oldAVX2 := useAVX2
 	useAVX2 = false
 	defer func() { useAVX2 = oldAVX2 }()
 
-	for _, p := range pairs {
-		src := []byte(p.decoded)
-		expected := []byte(p.encoded)
-		// AVX512 encode requires CX ≥ 64; each round processes 48 input → 64 output bytes.
-		// nRounds = (len(src)-16)/48 (integer); the 16-byte tail is left for encodeGeneric.
-		asmBytes := ((len(src) - 16) / 48) * 64
-		dst := make([]byte, StdEncoding.EncodedLen(len(src)))
+	base := bytes.Repeat([]byte("abcdefghijklmnopqrstuvwxyz012345"), 10)
+	for _, size := range []int{64, 96, 112, 128, 160} {
+		src := base[:size]
+		ref := StdEncoding.EncodeToString(src)
+		dst := make([]byte, len(ref))
 		ret := encodeAsm(dst, src, &encodeStdLut)
-		if ret != asmBytes {
-			t.Errorf("len=%d: ret=%d want=%d", len(src), ret, asmBytes)
+		// At least one AVX512 round must have run (64 output bytes).
+		if ret < 64 {
+			t.Errorf("size=%d: ret=%d < 64, AVX512 not entered", size, ret)
+			continue
 		}
-		if !bytes.Equal(dst[:ret], expected[:ret]) {
-			t.Errorf("len=%d: got %x, want %x", len(src), dst[:ret], expected[:ret])
+		// The first ret output bytes must match the standard encoding prefix.
+		if !bytes.Equal(dst[:ret], []byte(ref)[:ret]) {
+			t.Errorf("size=%d ret=%d: output mismatch\n  got:  %s\n  want: %s",
+				size, ret, dst[:ret], []byte(ref)[:ret])
 		}
 	}
 }
 
 // TestAVX512URLEncodeAsm verifies the AVX512 VBMI encode path for URL-safe base64.
+// encodeAsm internally falls back to AVX2 for tail bytes.
 func TestAVX512URLEncodeAsm(t *testing.T) {
 	if !useAVX512VBMI {
 		t.Skip("skip AVX512 VBMI url-encode test: AVX512 VBMI not supported")
-	}
-	pairs := []testpair{
-		// 64 bytes input (48 useful + 16 tail) → 1 AVX512 round → 64 output bytes
-		{"!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~0000000000000000",
-			"IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-"},
-		// 112 bytes input (96 useful + 16 tail) → 2 AVX512 rounds → 128 output bytes
-		{"!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~0000000000000000",
-			"IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-"},
 	}
 	oldAVX2 := useAVX2
 	useAVX2 = false
 	defer func() { useAVX2 = oldAVX2 }()
 
-	for _, p := range pairs {
-		src := []byte(p.decoded)
-		expected := []byte(p.encoded)
-		asmBytes := ((len(src) - 16) / 48) * 64
-		dst := make([]byte, URLEncoding.EncodedLen(len(src)))
+	base := bytes.Repeat([]byte("!?$*&()'-=@~ABCD"), 10)
+	for _, size := range []int{64, 96, 112, 128, 160} {
+		src := base[:size]
+		ref := URLEncoding.EncodeToString(src)
+		dst := make([]byte, len(ref))
 		ret := encodeAsm(dst, src, &encodeURLLut)
-		if ret != asmBytes {
-			t.Errorf("len=%d: ret=%d want=%d", len(src), ret, asmBytes)
+		if ret < 64 {
+			t.Errorf("size=%d: ret=%d < 64, AVX512 not entered", size, ret)
+			continue
 		}
-		if !bytes.Equal(dst[:ret], expected[:ret]) {
-			t.Errorf("len=%d: got %x, want %x", len(src), dst[:ret], expected[:ret])
+		if !bytes.Equal(dst[:ret], []byte(ref)[:ret]) {
+			t.Errorf("size=%d ret=%d: output mismatch\n  got:  %s\n  want: %s",
+				size, ret, dst[:ret], []byte(ref)[:ret])
 		}
 	}
 }
@@ -280,6 +270,150 @@ func TestAVX512BoundaryConsistency(t *testing.T) {
 		}
 		if !bytes.Equal(dstGeneric[:n1], dstAVX512[:n2]) {
 			t.Fatalf("decode size=%d: bytes mismatch", size)
+		}
+	}
+}
+
+// avx512EncRoundsOutput computes the number of output bytes produced by the
+// AVX512 loop alone (no AVX2 tail), given an input of n bytes.
+// Since CX_final ∈ [16,63] whenever CX_initial ≥ 64, the AVX2 tail always
+// runs after the AVX512 loop; this function is used to prove that.
+func avx512EncRoundsOutput(n int) int {
+	cx, si := n, 0
+	for cx >= 64 {
+		si += 64
+		cx -= 48
+	}
+	return si
+}
+
+// TestAVX512EncodeAVX2Tail verifies that encodeAsm's internal AVX2 fallback
+// processes tail bytes after the AVX512 loop rather than returning early.
+// After any AVX512 run, CX_final ∈ [16,63], so the AVX2 tail always runs.
+func TestAVX512EncodeAVX2Tail(t *testing.T) {
+	if !useAVX512VBMI {
+		t.Skip("skip: AVX512 VBMI not supported")
+	}
+	oldAVX2 := useAVX2
+	useAVX2 = false
+	defer func() { useAVX2 = oldAVX2 }()
+
+	base := bytes.Repeat([]byte("abcdefghijklmnopqrstuvwxyz012345"), 10)
+	for _, size := range []int{64, 76, 88, 100, 112, 124, 136, 160} {
+		src := base[:size]
+		ref := StdEncoding.EncodeToString(src)
+
+		dst := make([]byte, len(ref))
+		ret := encodeAsm(dst, src, &encodeStdLut)
+
+		// ret must exceed what the AVX512 loop alone would have produced,
+		// confirming the AVX2 internal fallback processed additional tail bytes.
+		avx512Only := avx512EncRoundsOutput(size)
+		if ret <= avx512Only {
+			t.Errorf("size=%d: ret=%d not > avx512Only=%d; AVX2 tail fallback did not run",
+				size, ret, avx512Only)
+		}
+		// Output must match the standard encoding prefix up to ret bytes.
+		if !bytes.Equal(dst[:ret], []byte(ref)[:ret]) {
+			t.Errorf("size=%d ret=%d: output mismatch\n  got:  %s\n  want: %s",
+				size, ret, dst[:ret], []byte(ref)[:ret])
+		}
+	}
+}
+
+// TestAVX512URLEncodeAVX2Tail is the URL-safe variant of TestAVX512EncodeAVX2Tail.
+func TestAVX512URLEncodeAVX2Tail(t *testing.T) {
+	if !useAVX512VBMI {
+		t.Skip("skip: AVX512 VBMI not supported")
+	}
+	oldAVX2 := useAVX2
+	useAVX2 = false
+	defer func() { useAVX2 = oldAVX2 }()
+
+	base := bytes.Repeat([]byte("!?$*&()'-=@~ABCDEFGHIJKLMNOPQRST"), 10)
+	for _, size := range []int{64, 88, 112, 136, 160} {
+		src := base[:size]
+		ref := URLEncoding.EncodeToString(src)
+
+		dst := make([]byte, len(ref))
+		ret := encodeAsm(dst, src, &encodeURLLut)
+
+		avx512Only := avx512EncRoundsOutput(size)
+		if ret <= avx512Only {
+			t.Errorf("size=%d: ret=%d not > avx512Only=%d; AVX2 tail fallback did not run",
+				size, ret, avx512Only)
+		}
+		if !bytes.Equal(dst[:ret], []byte(ref)[:ret]) {
+			t.Errorf("size=%d ret=%d: output mismatch\n  got:  %s\n  want: %s",
+				size, ret, dst[:ret], []byte(ref)[:ret])
+		}
+	}
+}
+
+// TestAVX512StdDecodeAVX2Tail verifies that decodeStdAsm's internal AVX2 fallback
+// processes tail bytes after the AVX512 loop.  Input sizes chosen so that
+// (inputLen - 64*N) ∈ [24,63], hitting the avx2_loop / avx2_tail path.
+func TestAVX512StdDecodeAVX2Tail(t *testing.T) {
+	if !useAVX512VBMI {
+		t.Skip("skip: AVX512 VBMI not supported")
+	}
+	oldAVX2 := useAVX2
+	useAVX2 = false
+	defer func() { useAVX2 = oldAVX2 }()
+
+	base := bytes.Repeat([]byte("abcdefghijklmnopqrstuvwxyz012345"), 10)
+	// Encoded input sizes: 64+24=88, 64+32=96, 64+48=112, 128+32=160
+	for _, rawSize := range []int{66, 72, 84, 120} {
+		raw := base[:rawSize]
+		enc := []byte(StdEncoding.EncodeToString(raw))
+		// Trim padding so encLen is divisible by 4 with no '=' (clean blocks only)
+		encLen := (rawSize / 3) * 4 // only complete 3-byte groups → 4-char blocks
+		enc = enc[:encLen]
+
+		dst := make([]byte, rawSize)
+		remain := decodeStdAsm(dst, enc)
+
+		// AVX2 tail must have consumed some bytes: remain < encLen.
+		if remain >= encLen {
+			t.Errorf("encLen=%d: remain=%d >= encLen; nothing decoded by ASM", encLen, remain)
+			continue
+		}
+		// The decoded portion (enc[:encLen-remain]) must match raw.
+		decoded := encLen - remain
+		inputConsumed := (decoded / 4) * 3
+		if !bytes.Equal(dst[:inputConsumed], raw[:inputConsumed]) {
+			t.Errorf("encLen=%d: decoded bytes mismatch at %d bytes", encLen, inputConsumed)
+		}
+	}
+}
+
+// TestAVX512URLDecodeAVX2Tail is the URL-safe variant of TestAVX512StdDecodeAVX2Tail.
+func TestAVX512URLDecodeAVX2Tail(t *testing.T) {
+	if !useAVX512VBMI {
+		t.Skip("skip: AVX512 VBMI not supported")
+	}
+	oldAVX2 := useAVX2
+	useAVX2 = false
+	defer func() { useAVX2 = oldAVX2 }()
+
+	base := bytes.Repeat([]byte("abcdefghijklmnopqrstuvwxyz012345"), 10)
+	for _, rawSize := range []int{66, 72, 84, 120} {
+		raw := base[:rawSize]
+		enc := []byte(URLEncoding.EncodeToString(raw))
+		encLen := (rawSize / 3) * 4
+		enc = enc[:encLen]
+
+		dst := make([]byte, rawSize)
+		remain := decodeUrlAsm(dst, enc)
+
+		if remain >= encLen {
+			t.Errorf("encLen=%d: remain=%d >= encLen; nothing decoded by ASM", encLen, remain)
+			continue
+		}
+		decoded := encLen - remain
+		inputConsumed := (decoded / 4) * 3
+		if !bytes.Equal(dst[:inputConsumed], raw[:inputConsumed]) {
+			t.Errorf("encLen=%d: decoded bytes mismatch at %d bytes", encLen, inputConsumed)
 		}
 	}
 }

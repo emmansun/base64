@@ -380,6 +380,7 @@ avx2_done:
 avx512:
 	// Determine which 64-byte AVX512 encode LUT to use based on the 16-byte SSE lut passed in.
 	// Standard lut has byte[12]=0xED; URL lut has byte[12]=0xEF.
+	MOVQ SI, R9       // save lut pointer for AVX2 tail fallback
 	MOVBLZX 12(SI), R8
 	CMPB R8, $0xED
 	JNE avx512_url_enc
@@ -389,43 +390,54 @@ avx512_url_enc:
 	VMOVDQU32 enc512_url_lut<>(SB), Z4
 avx512_enc_start:
 	VMOVDQU32 enc512_spread<>(SB), Z5
-	VBROADCASTI32X4 mulhi_mask<>(SB), Z6
-	VBROADCASTI32X4 mulhi_const<>(SB), Z7
-	VBROADCASTI32X4 mullo_mask<>(SB), Z8
-	VBROADCASTI32X4 mullo_const<>(SB), Z9
+	VBROADCASTI32X4 mulhi_mask<>(SB), Z7   // matches AVX2 Y7
+	VBROADCASTI32X4 mulhi_const<>(SB), Z8  // matches AVX2 Y8
+	VBROADCASTI32X4 mullo_mask<>(SB), Z9   // matches AVX2 Y9
+	VBROADCASTI32X4 mullo_const<>(SB), Z10 // matches AVX2 Y10
 	XORQ SI, SI       // SI = output byte offset
 
 avx512_loop:
-	// Require 64 bytes of input so the 64-byte ZMM load is always safe.
-	// We process 48 of the 64 loaded bytes per iteration.
-	CMPQ CX, $64
-	JB avx512_done
+		// Require 64 bytes of input so the 64-byte ZMM load is always safe.
+		// We process 48 of the 64 loaded bytes per iteration.
+		CMPQ CX, $64
+		JB avx512_done
 
-	// Load 64 bytes from input (only first 48 are used; spread indices 0..47 ignore rest)
-	VMOVDQU32 (BX), Z0
+		// Load 64 bytes from input (only first 48 are used; spread indices 0..47 ignore rest)
+		VMOVDQU32 (BX), Z0
 
-	// Spread: rearrange input bytes into [b c a b] pattern per 4-byte output group.
-	VPERMB Z0, Z5, Z0
+		// Spread: rearrange input bytes into [b,a,c,b] pattern per 4-byte output group.
+		VPERMB Z0, Z5, Z0
 
-	// Extract 6-bit indices via mulhuw + mullw technique (same as SSE/AVX2 path)
-	VPANDD Z6, Z0, Z1          // tmp = in & mulhi_mask
-	VPMULHUW Z7, Z1, Z1        // tmp = PMULHUW(tmp, mulhi_const)
-	VPANDD Z8, Z0, Z0          // in  = in & mullo_mask
-	VPMULLW Z9, Z0, Z0         // in  = PMULLW(in, mullo_const)
-	VPORD Z1, Z0, Z0           // in  = in | tmp  → 6-bit index in each byte
+		// Extract 6-bit indices via mulhuw + mullw technique (same as SSE/AVX2 path)
+		VPANDD Z7, Z0, Z1          // tmp = in & mulhi_mask
+		VPMULHUW Z8, Z1, Z1        // tmp = PMULHUW(tmp, mulhi_const)
+		VPANDD Z9, Z0, Z0          // in  = in & mullo_mask
+		VPMULLW Z10, Z0, Z0        // in  = PMULLW(in, mullo_const)
+		VPORD Z1, Z0, Z0           // in  = in | tmp  → 6-bit index in each byte
 
-	// Map 6-bit indices to base64 characters
-	VPERMB Z4, Z0, Z0
+		// Map 6-bit indices to base64 characters
+		VPERMB Z4, Z0, Z0
 
-	// Store 64 encoded bytes
-	VMOVDQU32 Z0, (AX)(SI*1)
+		// Store 64 encoded bytes
+		VMOVDQU32 Z0, (AX)(SI*1)
 
-	ADDQ $64, SI
-	SUBQ $48, CX
-	LEAQ 48(BX), BX
-	JMP avx512_loop
+		ADDQ $64, SI
+		SUBQ $48, CX
+		LEAQ 48(BX), BX
+		JMP avx512_loop
 
 avx512_done:
+	// Fall back to AVX2 for the remaining tail (CX in [16..63]).
+	// Y7-Y10 (mulhi/mullo constants) are already valid as the lower 256 bits of Z7-Z10;
+	// no VZEROUPPER needed since AVX2 uses VEX-encoded instructions throughout.
+	CMPQ CX, $16
+	JB avx512_ret
+	VBROADCASTI128 reshuffle_mask<>(SB), Y6
+	VBROADCASTI128 range_0_end<>(SB), Y11
+	VBROADCASTI128 range_1_end<>(SB), Y12
+	VBROADCASTI128 (R9), Y13
+	JMP avx2_head
+avx512_ret:
 	MOVQ SI, ret+56(FP)
 	VZEROUPPER
 	RET
@@ -608,43 +620,54 @@ avx512:
 	VMOVDQU32 dec512_compress<>(SB), Z3   // compress permutation table (loaded once)
 
 avx512_loop:
-	CMPQ CX, $64
-	JB avx512_done
+		CMPQ CX, $64
+		JB avx512_done
 
-	// Load 64 base64-encoded input bytes
-	VMOVDQU32 (BX), Z0
+		// Load 64 base64-encoded input bytes
+		VMOVDQU32 (BX), Z0
 
-	// Validate + translate: VPERMI2B uses Z0[i] bit6 to choose Z4 or Z5,
-	// mapping each input char to its 6-bit decoded value (0xFF if illegal).
-	// After this, Z0 is modified in-place with the translated values.
-	VPERMI2B Z5, Z4, Z0
+		// Validate + translate: VPERMI2B uses Z0[i] bit6 to choose Z4 or Z5,
+		// mapping each input char to its 6-bit decoded value (0xFF if illegal).
+		// After this, Z0 is modified in-place with the translated values.
+		VPERMI2B Z5, Z4, Z0
 
-	// Detect any illegal characters (0xFF has bit7 set; valid values are 0x00..0x3F)
-	VPXORD Z2, Z2, Z2          // Z2 = 0
-	VPCMPB $1, Z2, Z0, K1      // K1[i] = 1 if Z0[i] < 0 (bit7 set = invalid char)
-	KTESTQ K1, K1
-	JNZ avx512_done             // bail on any invalid byte; caller handles via generic
+		// Detect any illegal characters (0xFF has bit7 set; valid values are 0x00..0x3F)
+		VPXORD Z2, Z2, Z2          // Z2 = 0
+		VPCMPB $1, Z2, Z0, K1      // K1[i] = 1 if Z0[i] < 0 (bit7 set = invalid char)
+		KTESTQ K1, K1
+		JNZ avx512_done             // bail on any invalid byte; caller handles via generic
 
-	// Reshuffle 4×6-bit → 3×8-bit per 4-byte group (512-bit wide)
-	VPMADDUBSW Z6, Z0, Z0      // merge pairs: [00aaaaaa 00bbbbbb] → [00000000 aaaaaabb bbbb0000]
-	VPMADDWD Z7, Z0, Z0        // merge quads: produce 24-bit groups in 32-bit lanes
-	VPSHUFB Z8, Z0, Z0         // per-lane: pack 3 valid bytes per 4, discard junk byte
+		// Reshuffle 4×6-bit → 3×8-bit per 4-byte group (512-bit wide)
+		VPMADDUBSW Z6, Z0, Z0      // merge pairs: [00aaaaaa 00bbbbbb] → [00000000 aaaaaabb bbbb0000]
+		VPMADDWD Z7, Z0, Z0        // merge quads: produce 24-bit groups in 32-bit lanes
+		VPSHUFB Z8, Z0, Z0         // per-lane: pack 3 valid bytes per 4, discard junk byte
 
-	// Compress 64 bytes (3 valid + 1 junk per 4) → 48 contiguous bytes using VPERMB.
-	// VPERMB Z0, Z3, Z0 means Z0[i] = old_Z0[Z3[i] & 63]: use Z3 as gather indices into Z0.
-	VPERMB Z0, Z3, Z0
+		// Compress 64 bytes (3 valid + 1 junk per 4) → 48 contiguous bytes using VPERMB.
+		// VPERMB Z0, Z3, Z0 means Z0[i] = old_Z0[Z3[i] & 63]: use Z3 as gather indices into Z0.
+		VPERMB Z0, Z3, Z0
 
-	// Store 48 output bytes: 32-byte YMM store + extract lane 2 for last 16
-	VMOVDQU Y0, (AX)
-	VEXTRACTI32X4 $2, Z0, X1
-	VMOVDQU X1, 32(AX)
+		// Store 48 output bytes: 32-byte YMM store + extract lane 2 for last 16
+		VMOVDQU Y0, (AX)
+		VEXTRACTI32X4 $2, Z0, X1
+		VMOVDQU X1, 32(AX)
 
-	SUBQ $64, CX
-	LEAQ 48(AX), AX
-	LEAQ 64(BX), BX
-	JMP avx512_loop
+		SUBQ $64, CX
+		LEAQ 48(AX), AX
+		LEAQ 64(BX), BX
+		JMP avx512_loop
 
 avx512_done:
+	// Fall back to AVX2 for the remaining tail (CX in [24..63]).
+	// Y6-Y8 (dec_reshuffle_const0/1, dec_reshuffle_mask) are already valid as
+	// the lower 256 bits of Z6-Z8; no VZEROUPPER needed (AVX2 uses VEX encoding).
+	CMPQ CX, $24
+	JB avx512_ret
+	VBROADCASTI128 nibble_mask<>(SB), Y9
+	VBROADCASTI128 stddec_lut_hi<>(SB), Y10
+	VBROADCASTI128 stddec_lut_lo<>(SB), Y11
+	VBROADCASTI128 stddec_lut_roll<>(SB), Y12
+	JMP avx2_loop
+avx512_ret:
 	MOVQ CX, ret+48(FP)
 	VZEROUPPER
 	RET
@@ -775,41 +798,53 @@ avx512:
 	VMOVDQU32 dec512_compress<>(SB), Z3   // compress permutation table (loaded once)
 
 avx512_loop:
-	CMPQ CX, $64
-	JB avx512_done
+		CMPQ CX, $64
+		JB avx512_done
 
-	// Load 64 base64-encoded input bytes
-	VMOVDQU32 (BX), Z0
+		// Load 64 base64-encoded input bytes
+		VMOVDQU32 (BX), Z0
 
-	// Validate + translate: VPERMI2B uses Z0[i] bit6 to choose Z4 or Z5.
-	VPERMI2B Z5, Z4, Z0
+		// Validate + translate: VPERMI2B uses Z0[i] bit6 to choose Z4 or Z5.
+		VPERMI2B Z5, Z4, Z0
 
-	// Detect any illegal characters (0xFF has bit7 set; valid values are 0x00..0x3F)
-	VPXORD Z2, Z2, Z2          // Z2 = 0
-	VPCMPB $1, Z2, Z0, K1      // K1[i] = 1 if Z0[i] < 0 (bit7 set = invalid char)
-	KTESTQ K1, K1
-	JNZ avx512_done             // bail on any invalid byte
+		// Detect any illegal characters (0xFF has bit7 set; valid values are 0x00..0x3F)
+		VPXORD Z2, Z2, Z2          // Z2 = 0
+		VPCMPB $1, Z2, Z0, K1      // K1[i] = 1 if Z0[i] < 0 (bit7 set = invalid char)
+		KTESTQ K1, K1
+		JNZ avx512_done             // bail on any invalid byte
 
-	// Reshuffle 4×6-bit → 3×8-bit per 4-byte group (512-bit wide)
-	VPMADDUBSW Z6, Z0, Z0
-	VPMADDWD Z7, Z0, Z0
-	VPSHUFB Z8, Z0, Z0
+		// Reshuffle 4×6-bit → 3×8-bit per 4-byte group (512-bit wide)
+		VPMADDUBSW Z6, Z0, Z0
+		VPMADDWD Z7, Z0, Z0
+		VPSHUFB Z8, Z0, Z0
 
-	// Compress 64 bytes → 48 contiguous bytes using VPERMB.
-	// VPERMB Z0, Z3, Z0 means Z0[i] = old_Z0[Z3[i] & 63]: use Z3 as gather indices into Z0.
-	VPERMB Z0, Z3, Z0
+		// Compress 64 bytes → 48 contiguous bytes using VPERMB.
+		// VPERMB Z0, Z3, Z0 means Z0[i] = old_Z0[Z3[i] & 63]: use Z3 as gather indices into Z0.
+		VPERMB Z0, Z3, Z0
 
-	// Store 48 output bytes: 32-byte YMM store + extract lane 2 for last 16
-	VMOVDQU Y0, (AX)
-	VEXTRACTI32X4 $2, Z0, X1
-	VMOVDQU X1, 32(AX)
+		// Store 48 output bytes: 32-byte YMM store + extract lane 2 for last 16
+		VMOVDQU Y0, (AX)
+		VEXTRACTI32X4 $2, Z0, X1
+		VMOVDQU X1, 32(AX)
 
-	SUBQ $64, CX
-	LEAQ 48(AX), AX
-	LEAQ 64(BX), BX
-	JMP avx512_loop
+		SUBQ $64, CX
+		LEAQ 48(AX), AX
+		LEAQ 64(BX), BX
+		JMP avx512_loop
 
 avx512_done:
+	// Fall back to AVX2 for the remaining tail (CX in [24..63]).
+	// Y6-Y8 (dec_reshuffle_const0/1, dec_reshuffle_mask) are already valid as
+	// the lower 256 bits of Z6-Z8; no VZEROUPPER needed (AVX2 uses VEX encoding).
+	CMPQ CX, $24
+	JB avx512_ret
+	VBROADCASTI128 nibble_mask<>(SB), Y9
+	VBROADCASTI128 urldec_lut_hi<>(SB), Y10
+	VBROADCASTI128 urldec_lut_lo<>(SB), Y11
+	VBROADCASTI128 urldec_lut_roll<>(SB), Y12
+	VBROADCASTI128 url_const_5e<>(SB), Y13
+	JMP avx2_loop
+avx512_ret:
 	MOVQ CX, ret+48(FP)
 	VZEROUPPER
 	RET
