@@ -1,0 +1,57 @@
+# Test AVX512 VBMI paths using Intel SDE (Software Development Emulator).
+# Intel SDE emulates Ice Lake CPUID on any x86-64 host, so cpu.X86.HasAVX512VBMI
+# returns true at runtime even on runners without physical AVX512 hardware.
+#
+# SDE download: https://www.intel.com/content/www/us/en/developer/articles/tool/software-development-emulator.html
+# Update SDE_URL / SDE_DIR below when a new release is available.
+
+name: amd64-avx512-sde
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  SDE_URL: https://downloadmirror.intel.com/813591/sde-external-9.44.0-2024-08-22-lin.tar.xz
+  SDE_DIR: sde-external-9.44.0-2024-08-22-lin
+
+jobs:
+
+  test:
+    strategy:
+      matrix:
+        go-version: [1.25.x]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v5
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Cache Intel SDE
+      id: cache-sde
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.SDE_DIR }}
+        key: intel-sde-${{ env.SDE_DIR }}
+
+    - name: Download Intel SDE
+      if: steps.cache-sde.outputs.cache-hit != 'true'
+      run: |
+        curl -L -o sde.tar.xz "$SDE_URL"
+        tar -xf sde.tar.xz
+
+    - name: Build test binary
+      run: go test -c -o base64.test .
+
+    - name: Test AVX512 VBMI (via Intel SDE, emulating Ice Lake)
+      # -icl: emulate Ice Lake (AVX512F + AVX512BW + AVX512VBMI)
+      run: ${{ env.SDE_DIR }}/sde64 -icl -- ./base64.test -test.run 'AVX512' -test.v
+
+    - name: Benchmark AVX512 VBMI (via Intel SDE, 1 iteration each)
+      run: ${{ env.SDE_DIR }}/sde64 -icl -- ./base64.test -test.bench 'AVX512' -test.benchtime 1x -test.run '^$' -test.v

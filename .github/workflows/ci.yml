@@ -39,9 +39,7 @@ jobs:
   # GitHub-hosted ubuntu-latest runners do not guarantee AVX512 VBMI support.
   # AVX512-specific tests use t.Skip when the CPU feature is absent, so this
   # job never fails on unsupported hardware — it just reports skipped tests.
-  # To actually exercise the AVX512 path, run on a self-hosted runner with an
-  # Ice Lake / Tiger Lake / Rocket Lake / Zen 5 CPU, or use a cloud instance
-  # such as AWS c6i / m6i (Ice Lake).
+  # For full AVX512 VBMI coverage see amd64_avx512_sde.yml (Intel SDE emulator).
   avx512:
     runs-on: ubuntu-latest
     strategy:

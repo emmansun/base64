@@ -111,9 +111,20 @@ func TestAVX512Encode(t *testing.T) {
 ```
 
 **如果 GitHub Actions 不支持 AVX512：**
-- 方案 A：添加 `t.Skip`，依赖手动验证（最简单）
-- 方案 B：使用 Intel SDE（Software Development Emulator）在 CI 中模拟
-- 方案 C：找到支持 AVX512 的 CI runner
+- 方案 A（已实现）：添加 `t.Skip` + `ci.yml` 的 `avx512` job 报告 skip 状态
+- 方案 B（已实现）：使用 Intel SDE（Software Development Emulator）— 见 `amd64_avx512_sde.yml`
+- 方案 C：找到支持 AVX512 的 CI runner（如 AWS c6i/m6i Ice Lake 实例）
+
+**Intel SDE 用法（`amd64_avx512_sde.yml`）：**
+```bash
+# 1. 编译测试二进制
+go test -c -o base64.test .
+
+# 2. 通过 SDE 运行（-icl 模拟 Ice Lake，含 AVX512 VBMI）
+sde64 -icl -- ./base64.test -test.run 'AVX512' -test.v
+sde64 -icl -- ./base64.test -test.bench 'AVX512' -test.benchtime 1x -test.run '^$' -test.v
+```
+SDE 通过拦截 CPUID 让 `cpu.X86.HasAVX512VBMI` 在 init 时返回 `true`，AVX512 指令执行由软件模拟。
 
 **本地编译验证命令（与平台一致，无需交叉编译）：**
 ```powershell
