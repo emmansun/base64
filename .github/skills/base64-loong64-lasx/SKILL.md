@@ -117,7 +117,7 @@ VMOVQ  V9, 12(R5)        // 写 bytes[12..23]（有效），bytes[24..27] = 0
 | `xvmaddwod.w.hu X9, X6, X8` | `0x74b6a4c8` | decode reshuffle step 2 |
 | `XVSLTBU X8, X3, X10`（URL）| `0x7408206a` | URL decode range compare |
 | `xvpermi.q X8, X9, 0x02` | `0x77ec0928` | encode head: X8.Q0=keep, X8.Q1=X9.Q0 |
-| `xvpermi.q X9, X8, 0x30` | `0x77ecc109` | decode store: X9.Q0 = X8.Q1 |
+| `xvpermi.q X9, X8, 0x01` | `0x77ec0509` | decode store: X9.Q0 = X8.Q1 |
 
 WORD 编码生成脚本（Python）：
 
@@ -138,11 +138,11 @@ XVMADDWOD_W_HU_OP = 0x0e96d << 15
 `xvpermi.q` 编码公式：`WORD = 0x77EC0000 | (imm8<<10) | (Xj<<5) | Xd`
 
 `xvpermi.q Xd, Xj, imm8` 语义（⚠️ 注意：Q0/Q1 选择器位布局与直觉相反，已通过 QEMU 实测验证）：
-- **Q0** 选择器：`imm8[5:4]`：0=Xd.Q0, 1=Xd.Q1, 2=Xj.Q0, 3=Xj.Q1
-- **Q1** 选择器：`imm8[1:0]`：0=Xd.Q0, 1=Xd.Q1, 2=Xj.Q0, 3=Xj.Q1
-- 示例：imm8=0x02（Q0选择器=0→Xd.Q0保持, Q1选择器=2→Xj.Q0）；imm8=0x30（Q0选择器=3→Xj.Q1）
+- **Q0** 选择器：`imm8[1:0]`：0=Xj.Q0, 1=Xj.Q1, 2=Xd.Q0(旧), 3=Xd.Q1(旧)
+- **Q1** 选择器：`imm8[5:4]`：0=Xj.Q0, 1=Xj.Q1, 2=Xd.Q0(旧), 3=Xd.Q1(旧)
+- 示例：imm8=0x02（Q0 sel=2→Xd.Q0保持, Q1 sel=0→Xj.Q0）；imm8=0x01（Q0 sel=1→Xj.Q1）
 
-> **注意：** SKILL.md 早期版本错误地将 Q0/Q1 选择器位写反了（0x20→X8.Q1=X9.Q0，实际应用 0x02；0x03→X9.Q0=X8.Q1，实际应用 0x30）。
+> **经 QEMU 实测验证（2026-03）：** 选择器 0/1 从 Xj 取值，2/3 从 Xd（旧值）取值。旧版文档（0/1=Xd, 2/3=Xj）是错误的。
 
 ### 第五步：提交并验证
 
