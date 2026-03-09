@@ -286,8 +286,9 @@ stddec_lasx:
 	VMOVQ (10*16)(R8), V7          // RESHUFFLE_MASK
 	XVMOVQ X7, X7.Q2
 	MOVV $40, R10
+
 stddec_lasx_loop:
-	BLTU R7, R10, stddec_lasx_tail
+		BLTU R7, R10, stddec_lasx_tail
 		XVMOVQ (R6), X8                // load 32 bytes input
 		// validate the input data
 		XVSRLB $4, X8, X9              // high nibble
@@ -313,7 +314,7 @@ stddec_lasx_loop:
 
 		WORD $0x0d63a108               // XVSHUFB X7, X8, X8, X8  (output reshuffle)
 		VMOVQ V8, (R5)                 // store Q0: bytes [0..11] valid, [12..15]=0
-WORD $0x77ec0509               // xvpermi.q X9, X8, 0x01: X9.Q0 = X8.Q1
+		WORD $0x77ec0509               // xvpermi.q X9, X8, 0x01: X9.Q0 = X8.Q1
 		VMOVQ V9, 12(R5)              // store at +12: bytes [12..23] valid, [24..27]=0
 
 		ADDV $24, R5
@@ -401,8 +402,9 @@ urldec_lasx:
 	VMOVQ (10*16)(R8), V7          // RESHUFFLE_MASK
 	XVMOVQ X7, X7.Q2
 	MOVV $40, R10
+
 urldec_lasx_loop:
-	BLTU R7, R10, urldec_lasx_tail
+		BLTU R7, R10, urldec_lasx_tail
 		XVMOVQ (R6), X8                // load 32 bytes input
 		// validate the input data
 		XVSRLB $4, X8, X9              // high nibble
@@ -428,7 +430,7 @@ urldec_lasx_loop:
 
 		WORD $0x0d63a108               // XVSHUFB X7, X8, X8, X8  (output reshuffle)
 		VMOVQ V8, (R5)                 // store Q0: bytes [0..11] valid, [12..15]=0
-WORD $0x77ec0509               // xvpermi.q X9, X8, 0x01: X9.Q0 = X8.Q1
+		WORD $0x77ec0509               // xvpermi.q X9, X8, 0x01: X9.Q0 = X8.Q1
 		VMOVQ V9, 12(R5)              // store at +12: bytes [12..23] valid, [24..27]=0
 
 		ADDV $24, R5
