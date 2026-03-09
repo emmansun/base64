@@ -117,6 +117,9 @@ func TestAVX512Encode(t *testing.T) {
 
 **Intel SDE 用法（`amd64_avx512_sde.yml`）：**
 ```bash
+# 0. Ubuntu 上需先禁用 yama ptrace 限制（SDE 基于 Pin，需要 ptrace attach）
+sudo sysctl -w kernel.yama.ptrace_scope=0
+
 # 1. 编译测试二进制
 go test -c -o base64.test .
 
@@ -124,6 +127,8 @@ go test -c -o base64.test .
 sde64 -icl -- ./base64.test -test.run 'AVX512' -test.v
 sde64 -icl -- ./base64.test -test.bench 'AVX512' -test.benchtime 1x -test.run '^$' -test.v
 ```
+下载地址：`https://downloadmirror.intel.com/684897/sde-external-10.7.0-2026-02-18-lin.tar.xz`  
+当前版本：10.7.0（2026-02-18），SHA256: `CA3D4086DE4ACB3FAEDF9F57B541C6936B7D5E19AE2BF763B6EA933573A0A217`  
 SDE 通过拦截 CPUID 让 `cpu.X86.HasAVX512VBMI` 在 init 时返回 `true`，AVX512 指令执行由软件模拟。
 
 **本地编译验证命令（与平台一致，无需交叉编译）：**

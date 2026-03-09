@@ -2,8 +2,8 @@
 # Intel SDE emulates Ice Lake CPUID on any x86-64 host, so cpu.X86.HasAVX512VBMI
 # returns true at runtime even on runners without physical AVX512 hardware.
 #
-# SDE download: https://www.intel.com/content/www/us/en/developer/articles/tool/software-development-emulator.html
-# Update SDE_URL / SDE_DIR below when a new release is available.
+# SDE download: https://www.intel.com/content/www/us/en/download/684897/intel-software-development-emulator.html
+# Update SDE_URL / SDE_DIR / SDE_SHA256 below when a new release is available.
 
 name: amd64-avx512-sde
 
@@ -14,8 +14,9 @@ on:
     branches: [ "main" ]
 
 env:
-  SDE_URL: https://downloadmirror.intel.com/813591/sde-external-9.44.0-2024-08-22-lin.tar.xz
-  SDE_DIR: sde-external-9.44.0-2024-08-22-lin
+  SDE_URL: https://downloadmirror.intel.com/684897/sde-external-10.7.0-2026-02-18-lin.tar.xz
+  SDE_DIR: sde-external-10.7.0-2026-02-18-lin
+  SDE_SHA256: CA3D4086DE4ACB3FAEDF9F57B541C6936B7D5E19AE2BF763B6EA933573A0A217
 
 jobs:
 
@@ -33,6 +34,9 @@ jobs:
       with:
         go-version: ${{ matrix.go-version }}
 
+    - name: Allow ptrace (required by Intel SDE / Pin on Ubuntu)
+      run: sudo sysctl -w kernel.yama.ptrace_scope=0
+
     - name: Cache Intel SDE
       id: cache-sde
       uses: actions/cache@v4
@@ -44,6 +48,7 @@ jobs:
       if: steps.cache-sde.outputs.cache-hit != 'true'
       run: |
         curl -L -o sde.tar.xz "$SDE_URL"
+        echo "$SDE_SHA256  sde.tar.xz" | sha256sum -c
         tar -xf sde.tar.xz
 
     - name: Build test binary
@@ -55,3 +60,4 @@ jobs:
 
     - name: Benchmark AVX512 VBMI (via Intel SDE, 1 iteration each)
       run: ${{ env.SDE_DIR }}/sde64 -icl -- ./base64.test -test.bench 'AVX512' -test.benchtime 1x -test.run '^$' -test.v
+
