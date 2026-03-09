@@ -92,7 +92,7 @@ lasx_loop：每次处理 24 字节输入 → 32 字节输出
 
 ```asm
 VMOVQ  V8, (R5)          // 写 Q0：bytes[0..11] 有效（bytes[12..15] = 0，由 reshuffle mask 保证）
-WORD $0x77ec0d09         // xvpermi.q X9, X8, 0x03：X9.Q0 = X8.Q1
+WORD $0x77ec0509         // xvpermi.q X9, X8, 0x01：X9.Q0 = X8.Q1
 VMOVQ  V9, 12(R5)        // 写 bytes[12..23]（有效），bytes[24..27] = 0
 ```
 
