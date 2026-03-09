@@ -205,7 +205,7 @@ avx512_enc_start:
 输入: 48 bytes raw → 输出: 64 bytes base64（每轮从 64 字节中读前 48 字节）
 
 Step 1: VMOVDQU32 (BX), Z0        // 加载 64 字节（前 48 有效）
-Step 2: VPERMB Z0, Z5, Z0         // 用 enc512_spread 重排为 [b c a b] 模式（64→64，每 4 字节对应 3 源字节）
+Step 2: VPERMB Z0, Z5, Z0         // 用 enc512_spread 重排为 [b a c b] 模式（64→64，每 4 字节对应 3 源字节）
 Step 3: mulhi/mullo 提取 6-bit 索引
   VPANDD Z6, Z0, Z1               // Z1 = in & mulhi_mask
   VPMULHUW Z7, Z1, Z1             // Z1 = PMULHUW(Z1, mulhi_const)
@@ -218,9 +218,9 @@ Step 5: VMOVDQU32 Z0, (AX)(SI*1)  // 存储 64 字节
 
 **enc512_spread 常量（64 字节）：**
 
-将 48 字节输入扩展为 64 个字节的索引模式，每 4 输出字节对应 3 输入字节，采用 [b c a b] 重排：
+将 48 字节输入扩展为 64 个字节的索引模式，每 4 输出字节对应 3 输入字节，采用 [b a c b] 重排（与 SSE3 `reshuffle_mask` 一致）：
 ```
-out[4k+0]=in[3k+1], out[4k+1]=in[3k+2], out[4k+2]=in[3k+0], out[4k+3]=in[3k+1]
+out[4k+0]=in[3k+1], out[4k+1]=in[3k+0], out[4k+2]=in[3k+2], out[4k+3]=in[3k+1]
 ```
 
 **6-bit 常量复用（VBROADCASTI32X4）：**
@@ -260,8 +260,8 @@ Step 4: 6-bit → 24-bit 压缩（复用 AVX2 常量，via VBROADCASTI32X4）
   VPMADDUBSW Z6, Z0, Z0           // Z6 = dec_reshuffle_const0（广播）
   VPMADDWD Z7, Z0, Z0             // Z7 = dec_reshuffle_const1（广播）
   VPSHUFB Z8, Z0, Z0              // Z8 = dec_reshuffle_mask（广播）
-  // 每 16 字节 lane 内：valid bytes at [0,1,2,4,5,6,8,9,10,12,13,14]，[3,7,11,15] 为垃圾
-Step 5: VPERMB dec512_compress<>(SB), Z0, Z0  // 64→48 字节压缩
+  // 每 16 字节 lane 内：valid bytes at [0..11]（连续），[12..15] 填 0
+Step 5: VPERMB Z0, Z3, Z0                     // 64→48 字节压缩（Z3=dec512_compress，循环前加载一次）
 Step 6: 存储 48 字节
   VMOVDQU Y0, (AX)                // 低 32 字节（YMM 直接存储）
   VEXTRACTI32X4 $2, Z0, X1       // 提取 lane 2（字节 32..47）
@@ -298,11 +298,13 @@ VBROADCASTI32X4 dec_reshuffle_mask<>(SB), Z8
 
 **dec512_compress 常量（64 字节）：**
 
-前 48 字节选出各 lane 中有效位置的字节，后 16 字节填 0（VPERMB 仅 lane 索引，但值无意义）：
+前 48 字节按 lane 连续选出有效字节，后 16 字节填 0（VPERMB 用 Z3 作索引寄存器，循环前 `VMOVDQU32 dec512_compress<>(SB), Z3` 加载一次）：
 ```
-字节 0..47: 从 64 字节中按 [0,1,2,4,5,6,8,9,10,12,13,14,16,...] 顺序选出 48 字节
+字节 0..47: lane0=[0..11], lane1=[16..27], lane2=[32..43], lane3=[48..59]
 字节 48..63: 0x00（不使用）
 ```
+
+> **重要**：`dec_reshuffle_mask` 中 0xFF 条目在每 lane 的第 12..15 字节处，所以每 lane 有效字节在 [0..11]（连续 12 个），不是 [0,1,2,4,5,6,8,9,10,12,13,14]。compress 表按此连续排列。
 
 ## LUT 生成脚本
 
@@ -319,7 +321,7 @@ go run gen_lut.go
 |--------|------|------|
 | `enc512_std_lut` | 64 字节 | encode Standard LUT（`A-Za-z0-9+/`） |
 | `enc512_url_lut` | 64 字节 | encode URL-safe LUT（`A-Za-z0-9-_`） |
-| `enc512_spread` | 64 字节 | 输入字节重排索引（`[b c a b]` 模式） |
+| `enc512_spread` | 64 字节 | 输入字节重排索引（`[b a c b]` 模式，与 SSE3 一致） |
 | `stddec512_lut_lo` | 64 字节 | decode Standard LUT 低段（ASCII 0..63） |
 | `stddec512_lut_hi` | 64 字节 | decode Standard LUT 高段（ASCII 64..127） |
 | `urldec512_lut_lo` | 64 字节 | decode URL-safe LUT 低段 |
@@ -328,9 +330,9 @@ go run gen_lut.go
 
 **关键实现逻辑：**
 - `le64`：将 8 字节切片按小端序打包为 `uint64`，输出 `0x...` 十六进制字面量（匹配 Go 汇编 `DATA` 语法）
-- `enc512_spread`：`offsets := []int{1, 2, 0, 1}`，对每个 3 字节组生成 4 个索引，实现 `[b c a b]` 重排
+- `enc512_spread`：`offsets := []int{1, 0, 2, 1}`，对每个 3 字节组生成 4 个索引，实现 `[b a c b]` 重排（与 SSE3 `reshuffle_mask` 一致）
 - decode LUT：非法字符填 `0xFF`（bit7 置位），后续 `VPCMPB $1, Z2, Z0, K1` 检测 `Z0[i] < 0`
-- `dec512_compress`：前 48 字节为有效字节的跨 lane 索引，后 16 字节保持 0（VPERMB 不使用这部分输出）
+- `dec512_compress`：每 lane 取连续 12 字节 `[lane*16 .. lane*16+11]`，前 48 字节有效，后 16 字节保持 0；在循环前加载到 Z3 寄存器，使用 `VPERMB Z0, Z3, Z0`（非内存形式）
 
 ## 处理阈值
 

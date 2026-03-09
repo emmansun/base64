@@ -32,8 +32,8 @@ func main() {
 	}
 	fmt.Println()
 
-	// enc512_spread: out[4k+j] = in[3k + [1,2,0,1][j]]
-	offsets := []int{1, 2, 0, 1}
+	// enc512_spread: out[4k+j] = in[3k + [1,0,2,1][j]]  (matches SSE3 [b,a,c,b] pattern)
+	offsets := []int{1, 0, 2, 1}
 	spread := make([]byte, 64)
 	for k := 0; k < 16; k++ {
 		for j := 0; j < 4; j++ {
@@ -113,12 +113,14 @@ func main() {
 	fmt.Println()
 
 	// dec512_compress
+	// After VPSHUFB with dec_reshuffle_mask, each 16-byte lane has 12 valid decoded
+	// bytes at positions [0..11] (contiguous) and zeros at [12..15].
+	// Gather 12 bytes from each of the 4 lanes into contiguous positions 0..47.
 	compress := make([]byte, 64)
-	src := []int{0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14}
 	idx := 0
 	for lane := 0; lane < 4; lane++ {
 		base := lane * 16
-		for _, off := range src {
+		for off := 0; off < 12; off++ {
 			compress[idx] = byte(base + off)
 			idx++
 		}
