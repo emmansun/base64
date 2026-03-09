@@ -603,6 +603,7 @@ avx512:
 	VBROADCASTI32X4 dec_reshuffle_const0<>(SB), Z6
 	VBROADCASTI32X4 dec_reshuffle_const1<>(SB), Z7
 	VBROADCASTI32X4 dec_reshuffle_mask<>(SB), Z8
+	VMOVDQU32 dec512_compress<>(SB), Z3   // compress permutation table (loaded once)
 
 avx512_loop:
 	CMPQ CX, $64
@@ -627,8 +628,9 @@ avx512_loop:
 	VPMADDWD Z7, Z0, Z0        // merge quads: produce 24-bit groups in 32-bit lanes
 	VPSHUFB Z8, Z0, Z0         // per-lane: pack 3 valid bytes per 4, discard junk byte
 
-	// Compress 64 bytes (3 valid + 1 junk per 4) → 48 contiguous bytes using VPERMB
-	VPERMB dec512_compress<>(SB), Z0, Z0
+	// Compress 64 bytes (3 valid + 1 junk per 4) → 48 contiguous bytes using VPERMB.
+	// VPERMB Z0, Z3, Z0 means Z0[i] = old_Z0[Z3[i] & 63]: use Z3 as gather indices into Z0.
+	VPERMB Z0, Z3, Z0
 
 	// Store 48 output bytes: 32-byte YMM store + extract lane 2 for last 16
 	VMOVDQU Y0, (AX)
@@ -768,6 +770,7 @@ avx512:
 	VBROADCASTI32X4 dec_reshuffle_const0<>(SB), Z6
 	VBROADCASTI32X4 dec_reshuffle_const1<>(SB), Z7
 	VBROADCASTI32X4 dec_reshuffle_mask<>(SB), Z8
+	VMOVDQU32 dec512_compress<>(SB), Z3   // compress permutation table (loaded once)
 
 avx512_loop:
 	CMPQ CX, $64
@@ -790,8 +793,9 @@ avx512_loop:
 	VPMADDWD Z7, Z0, Z0
 	VPSHUFB Z8, Z0, Z0
 
-	// Compress 64 bytes → 48 contiguous bytes using VPERMB
-	VPERMB dec512_compress<>(SB), Z0, Z0
+	// Compress 64 bytes → 48 contiguous bytes using VPERMB.
+	// VPERMB Z0, Z3, Z0 means Z0[i] = old_Z0[Z3[i] & 63]: use Z3 as gather indices into Z0.
+	VPERMB Z0, Z3, Z0
 
 	// Store 48 output bytes: 32-byte YMM store + extract lane 2 for last 16
 	VMOVDQU Y0, (AX)

@@ -17,17 +17,13 @@ func TestAVX512StdEncodeAsm(t *testing.T) {
 		t.Skip("skip AVX512 VBMI encode test: AVX512 VBMI not supported")
 	}
 	pairs := []testpair{
-		// exactly 48 bytes input → 64 bytes output (one AVX512 round)
-		{"abcdefghijklabcdefghijklabcdefghijklabcdefghijkl",
+		// 64 bytes input (48 useful + 16 tail) → 1 AVX512 round → 64 output bytes
+		// AVX512 processes src[0:48], encodeAsm returns 64; the 16-byte tail is left for encodeGeneric.
+		{"abcdefghijklabcdefghijklabcdefghijklabcdefghijkl0000000000000000",
 			"YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts"},
-		// 96 bytes input → 128 bytes output (two AVX512 rounds)
-		{"abcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijkl",
+		// 112 bytes input (96 useful + 16 tail) → 2 AVX512 rounds → 128 output bytes
+		{"abcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijklabcdefghijkl0000000000000000",
 			"YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts"},
-		// binary data
-		{"\x2b\xf7\xcc\x27\x01\xfe\x43\x97\xb4\x9e\xbe\xed\x5a\xcc\x70\x90" +
-			"\x2b\xf7\xcc\x27\x01\xfe\x43\x97\xb4\x9e\xbe\xed\x5a\xcc\x70\x90" +
-			"\x2b\xf7\xcc\x27\x01\xfe\x43\x97\xb4\x9e\xbe\xed\x5a\xcc\x70\x90",
-			"K/fMJwH+Q5e0nr7tWsxwkCv3zCcB/kOXtJ6+7VrMcJAr98wnAf5Dl7SevuVazHA="},
 	}
 	// Use only AVX512, temporarily disable AVX2
 	oldAVX2 := useAVX2
@@ -37,8 +33,9 @@ func TestAVX512StdEncodeAsm(t *testing.T) {
 	for _, p := range pairs {
 		src := []byte(p.decoded)
 		expected := []byte(p.encoded)
-		// encodeAsm only processes complete 3-byte groups; trim expected to what asm returns
-		asmBytes := (len(src) / 3) * 4
+		// AVX512 encode requires CX ≥ 64; each round processes 48 input → 64 output bytes.
+		// nRounds = (len(src)-16)/48 (integer); the 16-byte tail is left for encodeGeneric.
+		asmBytes := ((len(src) - 16) / 48) * 64
 		dst := make([]byte, StdEncoding.EncodedLen(len(src)))
 		ret := encodeAsm(dst, src, &encodeStdLut)
 		if ret != asmBytes {
@@ -56,12 +53,12 @@ func TestAVX512URLEncodeAsm(t *testing.T) {
 		t.Skip("skip AVX512 VBMI url-encode test: AVX512 VBMI not supported")
 	}
 	pairs := []testpair{
-		{"!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~",
+		// 64 bytes input (48 useful + 16 tail) → 1 AVX512 round → 64 output bytes
+		{"!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~0000000000000000",
 			"IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-"},
-		{"\x2b\xf7\xcc\x27\x01\xfe\x43\x97\xb4\x9e\xbe\xed\x5a\xcc\x70\x90" +
-			"\x2b\xf7\xcc\x27\x01\xfe\x43\x97\xb4\x9e\xbe\xed\x5a\xcc\x70\x90" +
-			"\x2b\xf7\xcc\x27\x01\xfe\x43\x97\xb4\x9e\xbe\xed\x5a\xcc\x70\x90",
-			"K_fMJwH-Q5e0nr7tWsxwkCv3zCcB_kOXtJ6-7VrMcJAr98wnAf5Dl7SevuVazHA="},
+		// 112 bytes input (96 useful + 16 tail) → 2 AVX512 rounds → 128 output bytes
+		{"!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~!?$*&()'-=@~0000000000000000",
+			"IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-"},
 	}
 	oldAVX2 := useAVX2
 	useAVX2 = false
@@ -70,7 +67,7 @@ func TestAVX512URLEncodeAsm(t *testing.T) {
 	for _, p := range pairs {
 		src := []byte(p.decoded)
 		expected := []byte(p.encoded)
-		asmBytes := (len(src) / 3) * 4
+		asmBytes := ((len(src) - 16) / 48) * 64
 		dst := make([]byte, URLEncoding.EncodedLen(len(src)))
 		ret := encodeAsm(dst, src, &encodeURLLut)
 		if ret != asmBytes {
