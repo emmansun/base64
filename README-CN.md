@@ -21,7 +21,7 @@
 - **ARM64** NEON
 - **PPC64X**
 - **S390X**
-- **LOONG64** LSX
+- **LOONG64** LSX/LASX
 - **RISCV64** RVV
 
 ## 性能
