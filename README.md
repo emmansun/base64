@@ -1,7 +1,7 @@
 # base64
 English | [简体中文](README-CN.md)
 
-A drop-in replacement of Golang's base64 implementation with SIMD acceleration.
+A SIMD-accelerated drop-in replacement for Go's `encoding/base64`.
 
 [![ci](https://github.com/emmansun/base64/actions/workflows/ci.yml/badge.svg)](https://github.com/emmansun/base64/actions/workflows/ci.yml)
 [![arm64](https://github.com/emmansun/base64/actions/workflows/arm64_qemu.yml/badge.svg)](https://github.com/emmansun/base64/actions/workflows/arm64_qemu.yml)
@@ -15,15 +15,82 @@ A drop-in replacement of Golang's base64 implementation with SIMD acceleration.
 ![GitHub go.mod Go version (branch)](https://img.shields.io/github/go-mod/go-version/emmansun/base64)
 [![Release](https://img.shields.io/github/release/emmansun/base64/all.svg)](https://github.com/emmansun/base64/releases)
 
-## Optimized architectures
-- **AMD64** SSE/AVX2/AVX512 VBMI
-- **ARM64** NEON
-- **PPC64X**
-- **S390X**
-- **LOONG64** LSX/LASX
-- **RISCV64** RVV
+## Overview
+
+This package keeps the same public API and behavior as Go's standard `encoding/base64`, while using architecture-specific SIMD implementations where available.
+
+- Compatible with `StdEncoding`, `URLEncoding`, `RawStdEncoding`, `RawURLEncoding`, `NewEncoding`, `WithPadding`, `Strict`, stream encoder/decoder, and append helpers.
+- Uses runtime CPU feature detection on supported platforms.
+- Falls back to the generic Go implementation when SIMD is unavailable or the input is too small for the optimized path.
+
+## Supported Architectures
+
+| Architecture | SIMD path |
+|---|---|
+| AMD64 | SSE, AVX2, AVX512 VBMI |
+| ARM64 | NEON |
+| PPC64X | VSX / VMX (AltiVec) |
+| S390X | Vector Facility |
+| LOONG64 | LSX, LASX |
+| RISCV64 | RVV |
+
+The concrete path is selected automatically at runtime based on CPU features.
+
+## Installation
+
+```bash
+go get github.com/emmansun/base64
+```
+
+## Usage
+
+Import this package instead of `encoding/base64`:
+
+```go
+package main
+
+import (
+	"fmt"
+
+	"github.com/emmansun/base64"
+)
+
+func main() {
+	src := []byte("hello, world")
+
+	enc := base64.StdEncoding.EncodeToString(src)
+	dec, err := base64.StdEncoding.DecodeString(enc)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(enc)
+	fmt.Println(string(dec))
+}
+```
+
+Because the exported API follows the standard library, existing code usually only needs an import path change.
+
+## Behavior Notes
+
+- Encoding and decoding semantics follow RFC 4648, matching Go's standard library behavior.
+- Strict decoding is supported through `Encoding.Strict()`.
+- Raw encodings without padding are supported through `RawStdEncoding`, `RawURLEncoding`, or `WithPadding(base64.NoPadding)`.
+- Inputs containing `\r` or `\n` are handled the same way as the standard library, but decode throughput may not improve for newline-heavy data.
+
+## Performance
+
+Performance depends on CPU model, microarchitecture, input size, encoding variant, and input shape. This repository does not publish a single benchmark table because numbers are hardware-dependent.
+
+If performance matters for your workload, run benchmarks on your target machines.
+
+## Project Status
+
+- The package is tested in CI across the architectures covered by this repository.
+- AMD64 AVX512 VBMI coverage is also validated with Intel SDE in CI.
 
 ## Acknowledgements
-This is an extension of [golang base64](https://github.com/golang/go/tree/master/src/encoding/base64).
 
-The amd64 (especially SSE version) / arm64 SIMD implementation are inspired by code from [aklomp/base64](https://github.com/aklomp/base64). 
+Most of the generic Go implementation is derived from [golang base64](https://github.com/golang/go/tree/master/src/encoding/base64).
+
+The amd64 implementation, especially the SSE path, and the arm64 SIMD implementation were inspired by [aklomp/base64](https://github.com/aklomp/base64).
