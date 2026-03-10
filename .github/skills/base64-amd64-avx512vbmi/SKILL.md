@@ -252,9 +252,9 @@ ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/
 - 可以接受该路径只优化 encode，不影响 decode 设计
 
 **核心思想：**
-先用 `VPERMB` 把 48 字节输入按 64-bit qword 重新打包，使每个 qword 包含两个连续 triplet：
+先用 `VPERMB` 把 48 字节输入重排成已经在公开实现和本仓库 CI 中验证过的 multishift 布局。每个 qword 对应两组 32-bit 打包块：
 ```
-[s2 s1 s0 s5 s4 s3 x x]
+[s1 s0 s2 s1 | s4 s3 s5 s4]
 ```
 随后用单条 `VPMULTISHIFTQB` 从每个 qword 中抽取 8 个 6-bit sextet，最后再用 `VPERMB` 直接查 64 字节 ASCII LUT。
 
@@ -262,8 +262,8 @@ ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/
 输入: 48 bytes raw → 输出: 64 bytes base64
 
 Step 1: VMOVDQU32 (BX), Z0
-Step 2: VPERMB Z0, Zshuffle, Z0       // 按 qword 打包两个 triplet
-Step 3: VPMULTISHIFTQB Zshift, Z0, Z0 // 每个 qword 提取 8 个 sextet
+Step 2: VPERMB Z0, Zshuffle, Z0       // 重排成 [s1,s0,s2,s1 | s4,s3,s5,s4]
+Step 3: VPMULTISHIFTQB Z0, Zshift, Z0 // Go 汇编顺序：data, control, dst
 Step 4: VPERMB Zlut, Z0, Z0           // 直接 sextet → ASCII
 Step 5: VMOVDQU32 Z0, (AX)(SI*1)
 ```
@@ -291,7 +291,7 @@ Step 5: VMOVDQU32 Z0, (AX)(SI*1)
   - `MOVQ SI, R9` 这一步仍然需要保留，因为 AVX2 fallback 还要用到原始 `lut` 指针加载 `Y13`
 
 3. **新增 multishift 专用常量，而不是复用 mulhi/mullo 常量**
-  - 新增 `enc512_ms_shift`：一个 16 字节块，供 `VBROADCASTI32X4` 广播后形成每 qword 的 `[18,12,6,0,42,36,30,24]`
+  - 新增 `enc512_ms_shift`：一个 16 字节块，供 `VBROADCASTI32X4` 广播后形成每 qword 的 `[10,4,22,16,42,36,54,48]`
   - 新增 `enc512_ms_shuffle`：把输入重排成 `[s1,s0,s2,s1 | s4,s3,s5,s4]` 这种经过公开实现验证的 multishift 布局
   - `enc512_ms_shuffle` 为 64 字节，`enc512_ms_shift` 为 16 字节并在循环外广播到 ZMM
 
@@ -315,7 +315,7 @@ avx512_ms_loop:
    JB avx512_ms_done
    VMOVDQU32 (BX), Z0
    VPERMB Z0, Z5, Z0
-   VPMULTISHIFTQB Z6, Z0, Z0
+  VPMULTISHIFTQB Z0, Z6, Z0
    VPERMB Z4, Z0, Z0
    VMOVDQU32 Z0, (AX)(SI*1)
    ADDQ $64, SI
@@ -511,7 +511,7 @@ go run gen_lut.go
   - `MOVQ SI, R9` 在 `XORQ SI, SI` 前备份 lut 指针
 
 ### Phase 3b: 可选的 VPMULTISHIFTQB Encode 实验
-10. 定义 `enc512_ms_shift` 常量（16 字节，用 `VBROADCASTI32X4` 广播成每 qword 的 `[18,12,6,0,42,36,30,24]`）
+10. 定义 `enc512_ms_shift` 常量（16 字节，用 `VBROADCASTI32X4` 广播成每 qword 的 `[10,4,22,16,42,36,54,48]`）
 11. 根据最终 qword 打包布局定义 `enc512_ms_shuffle` 常量
 12. 实现独立 `avx512_ms` encode 分支：`VPERMB -> VPMULTISHIFTQB -> VPERMB`
 13. 为 multishift 分支新增独立 `avx512_ms_done`，完整重载 `Y6-Y13` 后再跳 `avx2_head`
@@ -666,6 +666,22 @@ VPERMI2B Z_src2, Z_src1, Z_idx_dst
 // idx_dst[i] = (idx_dst[i] & 64) ? src2[idx_dst[i]&63] : src1[idx_dst[i]&63]
 ```
 VPERMI2B 就地修改 idx 寄存器（Z_idx_dst 既是索引输入也是结果输出）。
+
+**VPMULTISHIFTQB（Go 语法）：**
+```asm
+VPMULTISHIFTQB Z_data, Z_control, Z_dst
+```
+- 这里也要按 Go 汇编的源操作数顺序来写，不要照搬 Intel 手册或 intrinsics 文档里的参数排列。
+- 在本仓库的 encode 热循环中，正确写法是：
+```asm
+VPERMB Z0, Z5, Z0
+VPMULTISHIFTQB Z0, Z6, Z0
+VPERMB Z4, Z0, Z0
+```
+- 一个已在 CI 中踩过的坑是把 `Z6` 和 `Z0` 写反。那样本地的“纯 Go 常量参考测试”仍可能通过，但真实 AVX512 路径会输出明显错误的 base64 文本。
+- 因此实现 multishift 时，必须同时做两类验证：
+  1. 常量级参考测试：验证 `enc512_ms_shuffle` + `enc512_ms_shift` 的数学模型正确。
+  2. 真机 AVX512 测试：验证 Go 汇编指令顺序、寄存器使用和 fallback 逻辑都正确。
 
 ### VBROADCASTI32X4 复用 16 字节常量
 ```asm
