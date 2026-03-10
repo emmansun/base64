@@ -32,17 +32,17 @@ func main() {
 	}
 	fmt.Println()
 
-	// enc512_spread: out[4k+j] = in[3k + [1,0,2,1][j]]  (matches SSE3 [b,a,c,b] pattern)
-	offsets := []int{1, 0, 2, 1}
-	spread := make([]byte, 64)
-	for k := 0; k < 16; k++ {
-		for j := 0; j < 4; j++ {
-			spread[k*4+j] = byte(3*k + offsets[j])
-		}
-	}
-	fmt.Println("// enc512_spread")
-	for i := 0; i < 64; i += 8 {
-		fmt.Printf("DATA enc512_spread<>+0x%02X(SB)/8, $%s\n", i, le64(spread[i:i+8]))
+	// enc512_ms_shift: one 128-bit block for VPMULTISHIFTQB, intended to be
+	// loaded with VBROADCASTI32X4 so the selector repeats across all qwords.
+	// Each 64-bit lane extracts two triplets' sextets in order using:
+	// [18, 12, 6, 0, 42, 36, 30, 24]
+	msShiftPattern := []byte{18, 12, 6, 0, 42, 36, 30, 24}
+	msShift := make([]byte, 16)
+	copy(msShift[0:8], msShiftPattern)
+	copy(msShift[8:16], msShiftPattern)
+	fmt.Println("// enc512_ms_shift")
+	for i := 0; i < 16; i += 8 {
+		fmt.Printf("DATA enc512_ms_shift<>+0x%02X(SB)/8, $%s\n", i, le64(msShift[i:i+8]))
 	}
 	fmt.Println()
 

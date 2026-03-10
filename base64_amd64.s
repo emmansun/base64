@@ -117,18 +117,24 @@ DATA enc512_url_lut<>+0x30(SB)/8, $0x333231307A797877
 DATA enc512_url_lut<>+0x38(SB)/8, $0x5F2D393837363534
 GLOBL enc512_url_lut<>(SB), (NOPTR+RODATA), $64
 
-// AVX512 encode byte-spread table: for each of 64 output slots, which input byte (0-47) to read.
-// Pattern: out[4k+0]=in[3k+1], out[4k+1]=in[3k+0], out[4k+2]=in[3k+2], out[4k+3]=in[3k+1]
-// (matches the existing mulhi/mullo [b,a,c,b] reshuffle convention, same as SSE3 reshuffle_mask)
-DATA enc512_spread<>+0x00(SB)/8, $0x0405030401020001
-DATA enc512_spread<>+0x08(SB)/8, $0x0A0B090A07080607
-DATA enc512_spread<>+0x10(SB)/8, $0x10110F100D0E0C0D
-DATA enc512_spread<>+0x18(SB)/8, $0x1617151613141213
-DATA enc512_spread<>+0x20(SB)/8, $0x1C1D1B1C191A1819
-DATA enc512_spread<>+0x28(SB)/8, $0x222321221F201E1F
-DATA enc512_spread<>+0x30(SB)/8, $0x2829272825262425
-DATA enc512_spread<>+0x38(SB)/8, $0x2E2F2D2E2B2C2A2B
-GLOBL enc512_spread<>(SB), (NOPTR+RODATA), $64
+// AVX512 multishift encode pack table: each qword packs two triplets as
+// [s2,s1,s0,s5,s4,s3,*,*] so VPMULTISHIFTQB can extract 8 sextets.
+DATA enc512_ms_shuffle<>+0x00(SB)/8, $0x0102030405000102
+DATA enc512_ms_shuffle<>+0x08(SB)/8, $0x0708090A0B060708
+DATA enc512_ms_shuffle<>+0x10(SB)/8, $0x0D0E0F10110C0D0E
+DATA enc512_ms_shuffle<>+0x18(SB)/8, $0x1314151617121314
+DATA enc512_ms_shuffle<>+0x20(SB)/8, $0x191A1B1C1D18191A
+DATA enc512_ms_shuffle<>+0x28(SB)/8, $0x1F202122231E1F20
+DATA enc512_ms_shuffle<>+0x30(SB)/8, $0x2526272829242526
+DATA enc512_ms_shuffle<>+0x38(SB)/8, $0x2B2C2D2E2F2A2B2C
+GLOBL enc512_ms_shuffle<>(SB), (NOPTR+RODATA), $64
+
+// AVX512 multishift encode selectors. Each qword repeats [18,12,6,0,42,36,30,24]
+// so VPMULTISHIFTQB extracts [a,b,c,d,e,f,g,h] sextets from packed triplets.
+// Store one 128-bit block and broadcast it to ZMM in the hot path.
+DATA enc512_ms_shift<>+0x00(SB)/8, $0x181E242A00060C12
+DATA enc512_ms_shift<>+0x08(SB)/8, $0x181E242A00060C12
+GLOBL enc512_ms_shift<>(SB), (NOPTR+RODATA), $16
 
 // AVX512 decode output compress table: uses VPERMB to compact 64 bytes → 48 bytes.
 // After VPMADDUBSW+VPMADDWD+VPSHUFB (per-lane), valid decoded bytes are at positions [0..11]
@@ -389,11 +395,8 @@ avx512:
 avx512_url_enc:
 	VMOVDQU32 enc512_url_lut<>(SB), Z4
 avx512_enc_start:
-	VMOVDQU32 enc512_spread<>(SB), Z5
-	VBROADCASTI32X4 mulhi_mask<>(SB), Z7   // matches AVX2 Y7
-	VBROADCASTI32X4 mulhi_const<>(SB), Z8  // matches AVX2 Y8
-	VBROADCASTI32X4 mullo_mask<>(SB), Z9   // matches AVX2 Y9
-	VBROADCASTI32X4 mullo_const<>(SB), Z10 // matches AVX2 Y10
+	VMOVDQU32 enc512_ms_shuffle<>(SB), Z5
+	VBROADCASTI32X4 enc512_ms_shift<>(SB), Z6
 	XORQ SI, SI       // SI = output byte offset
 
 avx512_loop:
@@ -405,15 +408,11 @@ avx512_loop:
 		// Load 64 bytes from input (only first 48 are used; spread indices 0..47 ignore rest)
 		VMOVDQU32 (BX), Z0
 
-		// Spread: rearrange input bytes into [b,a,c,b] pattern per 4-byte output group.
+		// Pack two triplets per qword as [s2,s1,s0,s5,s4,s3,*,*].
 		VPERMB Z0, Z5, Z0
 
-		// Extract 6-bit indices via mulhuw + mullw technique (same as SSE/AVX2 path)
-		VPANDD Z7, Z0, Z1          // tmp = in & mulhi_mask
-		VPMULHUW Z8, Z1, Z1        // tmp = PMULHUW(tmp, mulhi_const)
-		VPANDD Z9, Z0, Z0          // in  = in & mullo_mask
-		VPMULLW Z10, Z0, Z0        // in  = PMULLW(in, mullo_const)
-		VPORD Z1, Z0, Z0           // in  = in | tmp  → 6-bit index in each byte
+		// Extract 8 sextets from each qword in one instruction.
+		VPMULTISHIFTQB Z6, Z0, Z0
 
 		// Map 6-bit indices to base64 characters
 		VPERMB Z4, Z0, Z0
@@ -428,11 +427,15 @@ avx512_loop:
 
 avx512_done:
 	// Fall back to AVX2 for the remaining tail (CX in [16..63]).
-	// Y7-Y10 (mulhi/mullo constants) are already valid as the lower 256 bits of Z7-Z10;
-	// no VZEROUPPER needed since AVX2 uses VEX-encoded instructions throughout.
+	// The multishift path does not preserve AVX2 mulhi/mullo constants in Y7-Y10,
+	// so reload the full AVX2 encode state before jumping into avx2_head.
 	CMPQ CX, $16
 	JB avx512_ret
 	VBROADCASTI128 reshuffle_mask<>(SB), Y6
+	VBROADCASTI128 mulhi_mask<>(SB), Y7
+	VBROADCASTI128 mulhi_const<>(SB), Y8
+	VBROADCASTI128 mullo_mask<>(SB), Y9
+	VBROADCASTI128 mullo_const<>(SB), Y10
 	VBROADCASTI128 range_0_end<>(SB), Y11
 	VBROADCASTI128 range_1_end<>(SB), Y12
 	VBROADCASTI128 (R9), Y13
