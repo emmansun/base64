@@ -412,8 +412,9 @@ avx512_loop:
 		// Reorder bytes into the multishift-friendly [s1,s0,s2,s1] pattern.
 		VPERMB Z0, Z5, Z0
 
-		// Extract 8 sextets from each qword in one instruction.
-		VPMULTISHIFTQB Z6, Z0, Z0
+		// Go assembler uses source-first operand order here: data, control, dest.
+		// Keep Z0 as the packed input bytes and Z6 as the broadcast selector table.
+		VPMULTISHIFTQB Z0, Z6, Z0
 
 		// Map 6-bit indices to base64 characters
 		VPERMB Z4, Z0, Z0
