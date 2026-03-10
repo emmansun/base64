@@ -117,23 +117,24 @@ DATA enc512_url_lut<>+0x30(SB)/8, $0x333231307A797877
 DATA enc512_url_lut<>+0x38(SB)/8, $0x5F2D393837363534
 GLOBL enc512_url_lut<>(SB), (NOPTR+RODATA), $64
 
-// AVX512 multishift encode pack table: each qword packs two triplets as
-// [s2,s1,s0,s5,s4,s3,*,*] so VPMULTISHIFTQB can extract 8 sextets.
-DATA enc512_ms_shuffle<>+0x00(SB)/8, $0x0102030405000102
-DATA enc512_ms_shuffle<>+0x08(SB)/8, $0x0708090A0B060708
-DATA enc512_ms_shuffle<>+0x10(SB)/8, $0x0D0E0F10110C0D0E
-DATA enc512_ms_shuffle<>+0x18(SB)/8, $0x1314151617121314
-DATA enc512_ms_shuffle<>+0x20(SB)/8, $0x191A1B1C1D18191A
-DATA enc512_ms_shuffle<>+0x28(SB)/8, $0x1F202122231E1F20
-DATA enc512_ms_shuffle<>+0x30(SB)/8, $0x2526272829242526
-DATA enc512_ms_shuffle<>+0x38(SB)/8, $0x2B2C2D2E2F2A2B2C
+// AVX512 multishift encode shuffle table. This keeps the proven VBMI layout
+// used by public AVX512 base64 implementations: each 32-bit chunk is arranged
+// as [s1,s0,s2,s1], and two such chunks share a qword for VPMULTISHIFTQB.
+DATA enc512_ms_shuffle<>+0x00(SB)/8, $0x0405030401020001
+DATA enc512_ms_shuffle<>+0x08(SB)/8, $0x0A0B090A07080607
+DATA enc512_ms_shuffle<>+0x10(SB)/8, $0x10110F100D0E0C0D
+DATA enc512_ms_shuffle<>+0x18(SB)/8, $0x1617151613141213
+DATA enc512_ms_shuffle<>+0x20(SB)/8, $0x1C1D1B1C191A1819
+DATA enc512_ms_shuffle<>+0x28(SB)/8, $0x222321221F201E1F
+DATA enc512_ms_shuffle<>+0x30(SB)/8, $0x2829272825262425
+DATA enc512_ms_shuffle<>+0x38(SB)/8, $0x2E2F2D2E2B2C2A2B
 GLOBL enc512_ms_shuffle<>(SB), (NOPTR+RODATA), $64
 
-// AVX512 multishift encode selectors. Each qword repeats [18,12,6,0,42,36,30,24]
-// so VPMULTISHIFTQB extracts [a,b,c,d,e,f,g,h] sextets from packed triplets.
+// AVX512 multishift encode selectors. Each qword repeats [10,4,22,16,42,36,54,48]
+// for the [s1,s0,s2,s1 | s4,s3,s5,s4] packing above, producing 8 sextets.
 // Store one 128-bit block and broadcast it to ZMM in the hot path.
-DATA enc512_ms_shift<>+0x00(SB)/8, $0x181E242A00060C12
-DATA enc512_ms_shift<>+0x08(SB)/8, $0x181E242A00060C12
+DATA enc512_ms_shift<>+0x00(SB)/8, $0x3036242A1016040A
+DATA enc512_ms_shift<>+0x08(SB)/8, $0x3036242A1016040A
 GLOBL enc512_ms_shift<>(SB), (NOPTR+RODATA), $16
 
 // AVX512 decode output compress table: uses VPERMB to compact 64 bytes → 48 bytes.
@@ -408,7 +409,7 @@ avx512_loop:
 		// Load 64 bytes from input (only first 48 are used; spread indices 0..47 ignore rest)
 		VMOVDQU32 (BX), Z0
 
-		// Pack two triplets per qword as [s2,s1,s0,s5,s4,s3,*,*].
+		// Reorder bytes into the multishift-friendly [s1,s0,s2,s1] pattern.
 		VPERMB Z0, Z5, Z0
 
 		// Extract 8 sextets from each qword in one instruction.

@@ -32,11 +32,29 @@ func main() {
 	}
 	fmt.Println()
 
+	// enc512_ms_shuffle follows the proven AVX512 VBMI layout used by public
+	// base64 implementations: each 32-bit chunk is [s1,s0,s2,s1].
+	msShuffle := []byte{
+		1, 0, 2, 1, 4, 3, 5, 4,
+		7, 6, 8, 7, 10, 9, 11, 10,
+		13, 12, 14, 13, 16, 15, 17, 16,
+		19, 18, 20, 19, 22, 21, 23, 22,
+		25, 24, 26, 25, 28, 27, 29, 28,
+		31, 30, 32, 31, 34, 33, 35, 34,
+		37, 36, 38, 37, 40, 39, 41, 40,
+		43, 42, 44, 43, 46, 45, 47, 46,
+	}
+	fmt.Println("// enc512_ms_shuffle")
+	for i := 0; i < 64; i += 8 {
+		fmt.Printf("DATA enc512_ms_shuffle<>+0x%02X(SB)/8, $%s\n", i, le64(msShuffle[i:i+8]))
+	}
+	fmt.Println()
+
 	// enc512_ms_shift: one 128-bit block for VPMULTISHIFTQB, intended to be
 	// loaded with VBROADCASTI32X4 so the selector repeats across all qwords.
-	// Each 64-bit lane extracts two triplets' sextets in order using:
-	// [18, 12, 6, 0, 42, 36, 30, 24]
-	msShiftPattern := []byte{18, 12, 6, 0, 42, 36, 30, 24}
+	// For the [s1,s0,s2,s1 | s4,s3,s5,s4] layout, each qword uses:
+	// [10, 4, 22, 16, 42, 36, 54, 48]
+	msShiftPattern := []byte{10, 4, 22, 16, 42, 36, 54, 48}
 	msShift := make([]byte, 16)
 	copy(msShift[0:8], msShiftPattern)
 	copy(msShift[8:16], msShiftPattern)

@@ -269,7 +269,7 @@ Step 5: VMOVDQU32 Z0, (AX)(SI*1)
 ```
 
 **已知固定常量：**
-- `enc512_ms_shift`：一个 16 字节块，内容对应两个 qword 的 selector `[18, 12, 6, 0, 42, 36, 30, 24]`，运行时用 `VBROADCASTI32X4` 广播
+- `enc512_ms_shift`：一个 16 字节块，内容对应两个 qword 的 selector `[10, 4, 22, 16, 42, 36, 54, 48]`，运行时用 `VBROADCASTI32X4` 广播
 - direct ASCII LUT 可以直接复用 `enc512_std_lut` / `enc512_url_lut`，不需要新的 offset LUT
 
 **实现注意：**
@@ -292,7 +292,7 @@ Step 5: VMOVDQU32 Z0, (AX)(SI*1)
 
 3. **新增 multishift 专用常量，而不是复用 mulhi/mullo 常量**
   - 新增 `enc512_ms_shift`：一个 16 字节块，供 `VBROADCASTI32X4` 广播后形成每 qword 的 `[18,12,6,0,42,36,30,24]`
-  - 新增 `enc512_ms_shuffle`：把输入按 qword 重排成 `[s2,s1,s0,s5,s4,s3,x,x]`
+  - 新增 `enc512_ms_shuffle`：把输入重排成 `[s1,s0,s2,s1 | s4,s3,s5,s4]` 这种经过公开实现验证的 multishift 布局
   - `enc512_ms_shuffle` 为 64 字节，`enc512_ms_shift` 为 16 字节并在循环外广播到 ZMM
 
 4. **新增独立的 multishift setup label**
@@ -459,7 +459,7 @@ go run gen_lut.go
 |--------|------|------|
 | `enc512_std_lut` | 64 字节 | encode Standard LUT（`A-Za-z0-9+/`） |
 | `enc512_url_lut` | 64 字节 | encode URL-safe LUT（`A-Za-z0-9-_`） |
-| `enc512_ms_shuffle` | 64 字节 | 可选 VPMULTISHIFTQB encode 路径的 qword 打包索引（`[s2,s1,s0,s5,s4,s3,x,x]`） |
+| `enc512_ms_shuffle` | 64 字节 | 可选 VPMULTISHIFTQB encode 路径的重排索引（每 qword 为 `[s1,s0,s2,s1 | s4,s3,s5,s4]`） |
 | `enc512_ms_shift` | 16 字节 | 可选 VPMULTISHIFTQB encode 路径的 qword selector，运行时用 `VBROADCASTI32X4` 广播 |
 | `stddec512_lut_lo` | 64 字节 | decode Standard LUT 低段（ASCII 0..63） |
 | `stddec512_lut_hi` | 64 字节 | decode Standard LUT 高段（ASCII 64..127） |
@@ -469,7 +469,7 @@ go run gen_lut.go
 
 **关键实现逻辑：**
 - `le64`：将 8 字节切片按小端序打包为 `uint64`，输出 `0x...` 十六进制字面量（匹配 Go 汇编 `DATA` 语法）
-- `enc512_ms_shift`：生成一个 16 字节块，内容为两个 qword 的 `[18, 12, 6, 0, 42, 36, 30, 24]`，供 `VBROADCASTI32X4` 扩成整条 ZMM selector
+- `enc512_ms_shift`：生成一个 16 字节块，内容为两个 qword 的 `[10, 4, 22, 16, 42, 36, 54, 48]`，供 `VBROADCASTI32X4` 扩成整条 ZMM selector
 - decode LUT：非法字符填 `0xFF`（bit7 置位），后续 `VPCMPB $1, Z2, Z0, K1` 检测 `Z0[i] < 0`
 - `dec512_compress`：每 lane 取连续 12 字节 `[lane*16 .. lane*16+11]`，前 48 字节有效，后 16 字节保持 0；在循环前加载到 Z3 寄存器，使用 `VPERMB Z0, Z3, Z0`（非内存形式）
 

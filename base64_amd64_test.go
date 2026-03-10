@@ -11,6 +11,55 @@ import (
 	"testing"
 )
 
+var avx512MultishiftShuffle = [64]byte{
+	1, 0, 2, 1, 4, 3, 5, 4,
+	7, 6, 8, 7, 10, 9, 11, 10,
+	13, 12, 14, 13, 16, 15, 17, 16,
+	19, 18, 20, 19, 22, 21, 23, 22,
+	25, 24, 26, 25, 28, 27, 29, 28,
+	31, 30, 32, 31, 34, 33, 35, 34,
+	37, 36, 38, 37, 40, 39, 41, 40,
+	43, 42, 44, 43, 46, 45, 47, 46,
+}
+
+var avx512MultishiftShift = [8]uint{
+	10, 4, 22, 16, 42, 36, 54, 48,
+}
+
+func avx512MultishiftEncodeReference(src []byte, lut string) []byte {
+	if len(src) != 48 {
+		panic("avx512 multishift reference expects exactly 48 input bytes")
+	}
+	out := make([]byte, 64)
+	for lane := 0; lane < 8; lane++ {
+		var packed uint64
+		for index := 0; index < 8; index++ {
+			packed |= uint64(src[avx512MultishiftShuffle[lane*8+index]]) << (8 * index)
+		}
+		for index, shift := range avx512MultishiftShift {
+			sextet := byte((packed >> shift) & 0x3F)
+			out[lane*8+index] = lut[sextet]
+		}
+	}
+	return out
+}
+
+func TestAVX512MultishiftConstantsReference(t *testing.T) {
+	src := bytes.Repeat([]byte("abcdefghijklmnopqrstuvwxyz0123456789ABCD"), 2)[:48]
+	stdWant := []byte(StdEncoding.EncodeToString(src))
+	urlWant := []byte(URLEncoding.EncodeToString(src))
+
+	stdGot := avx512MultishiftEncodeReference(src, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
+	if !bytes.Equal(stdGot, stdWant) {
+		t.Fatalf("standard multishift reference mismatch\n  got:  %s\n  want: %s", stdGot, stdWant)
+	}
+
+	urlGot := avx512MultishiftEncodeReference(src, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
+	if !bytes.Equal(urlGot, urlWant) {
+		t.Fatalf("url multishift reference mismatch\n  got:  %s\n  want: %s", urlGot, urlWant)
+	}
+}
+
 // TestAVX512StdEncodeAsm verifies the AVX512 VBMI encode path for standard base64.
 // encodeAsm internally falls back to AVX2 for tail bytes, so the return value
 // includes both AVX512 rounds and AVX2 tail bytes processed.
