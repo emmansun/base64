@@ -45,7 +45,7 @@ jobs:
             cat /proc/cpuinfo || true
           } | tee .artifacts/cpu-info.txt
 
-      - name: Run ML-KEM benchmarks
+      - name: Run BASE64 benchmarks
         shell: bash
         run: |
           set -euo pipefail
