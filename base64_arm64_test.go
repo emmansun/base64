@@ -104,3 +104,26 @@ func TestUrlDecodeSIMD(t *testing.T) {
 		}
 	}
 }
+
+func TestStdDecodeSIMDNibbleDispatch(t *testing.T) {
+	old := useStdNibbleDecode
+	useStdNibbleDecode = true
+	defer func() {
+		useStdNibbleDecode = old
+	}()
+
+	src := "YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts"
+	expected := []byte("abcdefghijklabcdefghijkl")
+	dst := make([]byte, StdEncoding.DecodedLen(len(src)))
+
+	n, err := StdEncoding.Decode(dst, []byte(src))
+	if err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if n != len(expected) {
+		t.Fatalf("got decoded len %d, want %d", n, len(expected))
+	}
+	if !bytes.Equal(dst[:n], expected) {
+		t.Fatalf("got %x, expected %x", dst[:n], expected)
+	}
+}

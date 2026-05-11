@@ -23,6 +23,18 @@ DATA dec_const<>+0x20(SB)/8, $0x090A040506000102 // dec_reshuffle_mask
 DATA dec_const<>+0x28(SB)/8, $0xFFFFFFFF0C0D0E08
 GLOBL dec_const<>(SB), (NOPTR+RODATA), $48
 
+DATA stddec_nibble_const<>+0x00(SB)/8, $0x0F0F0F0F0F0F0F0F // mask_0F
+DATA stddec_nibble_const<>+0x08(SB)/8, $0x0F0F0F0F0F0F0F0F
+DATA stddec_nibble_const<>+0x10(SB)/8, $0x2F2F2F2F2F2F2F2F // mask_2F
+DATA stddec_nibble_const<>+0x18(SB)/8, $0x2F2F2F2F2F2F2F2F
+DATA stddec_nibble_const<>+0x20(SB)/8, $0x0804080402011010 // stddec_lut_hi
+DATA stddec_nibble_const<>+0x28(SB)/8, $0x1010101010101010
+DATA stddec_nibble_const<>+0x30(SB)/8, $0x1111111111111115 // stddec_lut_lo
+DATA stddec_nibble_const<>+0x38(SB)/8, $0x1A1B1B1B1A131111
+DATA stddec_nibble_const<>+0x40(SB)/8, $0xB9B9BFBF04131000 // stddec_lut_roll
+DATA stddec_nibble_const<>+0x48(SB)/8, $0x0000000000000000
+GLOBL stddec_nibble_const<>(SB), (NOPTR+RODATA), $80
+
 //func encodeAsm(dst, src []byte, lut *[64]byte) int
 TEXT ·encodeAsm(SB),NOSPLIT,$0
 	MOVD dst_base+0(FP), R0
@@ -223,4 +235,134 @@ loop16:
 
 done:
 	MOVD R2, ret+56(FP)
+	RET
+
+//func decodeStdNibbleAsm(dst, src []byte) int
+TEXT ·decodeStdNibbleAsm(SB),NOSPLIT,$0
+	MOVD dst_base+0(FP), R0
+	MOVD src_base+24(FP), R1
+	MOVD src_len+32(FP), R2
+
+	MOVD $stddec_nibble_const<>(SB), R3
+	VLD1.P 16(R3), [V8.B16]   // mask_0F
+	VLD1.P 16(R3), [V9.B16]   // mask_2F
+	VLD1.P 16(R3), [V10.B16]  // lut_hi
+	VLD1.P 16(R3), [V11.B16]  // lut_lo
+	VLD1 (R3), [V12.B16]      // lut_roll
+
+loop64_nibble:
+		CMP $64, R2
+		BLT lessThan64_nibble
+
+		VLD4.P 64(R1), [V20.B16, V21.B16, V22.B16, V23.B16]
+
+		// lane 0
+		VUSHR $4, V20.B16, V24.B16
+		VAND V8.B16, V20.B16, V25.B16
+		VTBL V24.B16, [V10.B16], V26.B16
+		VTBL V25.B16, [V11.B16], V27.B16
+		VAND V27.B16, V26.B16, V16.B16
+		VCMEQ V9.B16, V20.B16, V30.B16
+		VADD V30.B16, V24.B16, V30.B16
+		VTBL V30.B16, [V12.B16], V30.B16
+		VADD V30.B16, V20.B16, V0.B16
+
+		// lane 1
+		VUSHR $4, V21.B16, V24.B16
+		VAND V8.B16, V21.B16, V25.B16
+		VTBL V24.B16, [V10.B16], V26.B16
+		VTBL V25.B16, [V11.B16], V27.B16
+		VAND V27.B16, V26.B16, V17.B16
+		VCMEQ V9.B16, V21.B16, V30.B16
+		VADD V30.B16, V24.B16, V30.B16
+		VTBL V30.B16, [V12.B16], V30.B16
+		VADD V30.B16, V21.B16, V1.B16
+
+		// lane 2
+		VUSHR $4, V22.B16, V24.B16
+		VAND V8.B16, V22.B16, V25.B16
+		VTBL V24.B16, [V10.B16], V26.B16
+		VTBL V25.B16, [V11.B16], V27.B16
+		VAND V27.B16, V26.B16, V18.B16
+		VCMEQ V9.B16, V22.B16, V30.B16
+		VADD V30.B16, V24.B16, V30.B16
+		VTBL V30.B16, [V12.B16], V30.B16
+		VADD V30.B16, V22.B16, V2.B16
+
+		// lane 3
+		VUSHR $4, V23.B16, V24.B16
+		VAND V8.B16, V23.B16, V25.B16
+		VTBL V24.B16, [V10.B16], V26.B16
+		VTBL V25.B16, [V11.B16], V27.B16
+		VAND V27.B16, V26.B16, V19.B16
+		VCMEQ V9.B16, V23.B16, V30.B16
+		VADD V30.B16, V24.B16, V30.B16
+		VTBL V30.B16, [V12.B16], V30.B16
+		VADD V30.B16, V23.B16, V3.B16
+
+		VORR V17.B16, V16.B16, V16.B16
+		VORR V18.B16, V16.B16, V16.B16
+		VORR V19.B16, V16.B16, V16.B16
+		WORD $0x6e30aa11 // VUMAXV V16.B16, V17
+		VMOV V17.B[0], R5
+		CBNZ R5, done_nibble
+
+		VSHL $2, V0.B16, V4.B16
+		VUSHR $4, V1.B16, V16.B16
+		VORR  V16.B16, V4.B16, V4.B16
+
+		VSHL $4, V1.B16, V5.B16
+		VUSHR $2, V2.B16, V16.B16
+		VORR  V16.B16, V5.B16, V5.B16
+
+		VSHL $6, V2.B16, V16.B16
+		VORR  V16.B16, V3.B16, V6.B16
+
+		VST3.P [V4.B16, V5.B16, V6.B16], 48(R0)
+
+		SUB $64, R2
+		B loop64_nibble
+
+lessThan64_nibble:
+	CMP $24, R2
+	BLT done_nibble
+
+	MOVD $dec_const<>(SB), R4
+	VLD1 (R4), [V1.B16, V2.B16, V3.B16]
+
+loop16_nibble:
+		VLD1.P 16(R1), [V20.B16]
+
+		VUSHR $4, V20.B16, V24.B16
+		VAND V8.B16, V20.B16, V25.B16
+		VTBL V24.B16, [V10.B16], V26.B16
+		VTBL V25.B16, [V11.B16], V27.B16
+		VAND V27.B16, V26.B16, V16.B16
+		WORD $0x6e30aa11 // VUMAXV V16.B16, V17
+		VMOV V17.B[0], R5
+		CBNZ R5, done_nibble
+
+		VCMEQ V9.B16, V20.B16, V30.B16
+		VADD V30.B16, V24.B16, V30.B16
+		VTBL V30.B16, [V12.B16], V30.B16
+		VADD V30.B16, V20.B16, V0.B16
+
+		WORD $0x2e20c024 // UMULL V0.B16, V1.B16, V4.H8
+		WORD $0x6e20c020 // UMULL2 V0.B16, V1.B16, V0.H8
+		VADDP V0.H8, V4.H8, V0.H8
+
+		WORD $0x2e60c044 // UMULL V0.H8, V2.H8, V4.S4
+		WORD $0x6e60c040 // UMULL2 V0.H8, V2.H8, V0.S4
+		VADDP V0.S4, V4.S4, V0.S4
+
+		VTBL V3.B16, [V0.B16], V0.B16
+		VST1 [V0.B16], (R0)
+
+		ADD $12, R0
+		SUB $16, R2
+		CMP $24, R2
+		BGE loop16_nibble
+
+done_nibble:
+	MOVD R2, ret+48(FP)
 	RET
