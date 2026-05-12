@@ -2,7 +2,8 @@
 
 package base64
 
-var useStdNibbleDecode = false
+var useStdNibbleDecode = true
+var useURLNibbleDecode = true
 
 var dencodeStdLut = [128]byte{
 	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
@@ -35,6 +36,9 @@ func decodeAsm(dst, src []byte, lut *[128]byte) int
 //go:noescape
 func decodeStdNibbleAsm(dst, src []byte) int
 
+//go:noescape
+func decodeURLNibbleAsm(dst, src []byte) int
+
 func encode(enc *Encoding, dst, src []byte) {
 	if len(src) >= 16 {
 		encoded := encodeAsm(dst, src, &enc.encode)
@@ -55,7 +59,11 @@ func decode(enc *Encoding, dst, src []byte) (int, error) {
 				remain = decodeAsm(dst, src, &dencodeStdLut)
 			}
 		} else if enc.lut == &encodeURLLut {
-			remain = decodeAsm(dst, src, &dencodeUrlLut)
+			if useURLNibbleDecode {
+				remain = decodeURLNibbleAsm(dst, src)
+			} else {
+				remain = decodeAsm(dst, src, &dencodeUrlLut)
+			}
 		}
 
 		if remain < srcLen {
