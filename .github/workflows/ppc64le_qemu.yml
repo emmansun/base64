@@ -15,7 +15,9 @@ jobs:
     strategy:
       matrix:
         go-version: [1.25.x]
-        arch: [ppc64le]  
+        # power8: IsPOWER9=false → exercises P8 code paths (VMSUMUHM WORD, LXVD2X+VPERM, XXPERMDI+STXVD2X)
+        # power9: IsPOWER9=true  → exercises P9 code paths (LXVB16X, STXVB16X)
+        qemu_cpu: [power8, power9]
     runs-on: ubuntu-latest
     steps:
     - name: Set up Go
@@ -28,8 +30,9 @@ jobs:
 
     - name: Check out code
       uses: actions/checkout@v5
-      
-    - name: Test
+
+    - name: Test (${{ matrix.qemu_cpu }})
       run: go test -v ./...
       env:
-        GOARCH: ${{ matrix.arch }}   
+        GOARCH: ppc64le
+        QEMU_CPU: ${{ matrix.qemu_cpu }}

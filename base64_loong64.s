@@ -146,7 +146,6 @@ lasx:
 	MOVV R5, R11                   // save dst pointer
 
 lasx_head:
-	BLTU R7, R10, lasx_tail
 	// Load first 28 bytes: two 16-byte loads, overlap at byte 12
 	VMOVQ (R6), V8                 // bytes [0..15]
 	VMOVQ 12(R6), V9               // bytes [12..27]
@@ -223,8 +222,10 @@ TEXT ·decodeStdAsm(SB),NOSPLIT,$0
 	MOVV $decode_const<>(SB), R8
 
 	MOVBU ·useLASX(SB), R10
-	BNE R10, R0, stddec_lasx
-
+	BEQ R10, R0, stddec_lsx
+	MOVV $40, R10
+	BGEU R7, R10, stddec_lasx
+stddec_lsx:
 	VMOVQ (0*16)(R8), LUT_HI
 	VMOVQ (1*16)(R8), LUT_LO
 	VMOVQ (2*16)(R8), DECODE_END
@@ -339,8 +340,10 @@ TEXT ·decodeUrlAsm(SB),NOSPLIT,$0
 	MOVV $decode_const<>(SB), R8
 
 	MOVBU ·useLASX(SB), R10
-	BNE R10, R0, urldec_lasx
-
+	BEQ R10, R0, urldec_lsx
+	MOVV $40, R10
+	BGEU R7, R10, urldec_lasx
+urldec_lsx:
 	VMOVQ (4*16)(R8), LUT_HI
 	VMOVQ (5*16)(R8), LUT_LO
 	VMOVQ (6*16)(R8), DECODE_END

@@ -220,10 +220,8 @@ loop:
 		VMULEUB X0, RESHUFFLE_CONST0, X1
 		VMULOUB X0, RESHUFFLE_CONST0, X2
 		VADDUHM X1, X2, X0
-		// PMADDWD
-		VMULEUH X0, RESHUFFLE_CONST1, X1
-		VMULOUH X0, RESHUFFLE_CONST1, X2
-		VADDUWM X1, X2, X0
+		// PMADDWD: vmsumuhm X0, X0, RESHUFFLE_CONST1, ZERO
+		WORD $0x114A3BA6
 
 		VPERM X0, X0, RESHUFFLE_MASK, X0
 		STXVD2X X0, (R4)(R8)
@@ -300,10 +298,8 @@ loop:
 		VMULEUB X0, RESHUFFLE_CONST0, X1
 		VMULOUB X0, RESHUFFLE_CONST0, X2
 		VADDUHM X1, X2, X0
-		// PMADDWD 
-		VMULEUH X0, RESHUFFLE_CONST1, X1
-		VMULOUH X0, RESHUFFLE_CONST1, X2
-		VADDUWM X1, X2, X0
+		// PMADDWD: vmsumuhm X0, X0, RESHUFFLE_CONST1, ZERO
+		WORD $0x114A3BA6
 
 		VPERM X0, X0, RESHUFFLE_MASK, X0
 		STXVD2X X0, (R4)(R8)
@@ -315,5 +311,220 @@ loop:
 		BGE loop
 
 done:
+	MOVD R6, ret+48(FP)
+	RET
+
+// Power9+ encode: same as encodeAsm but uses STXVB16X on ppc64le (eliminates XXPERMDI).
+// Uses concrete V register names to avoid conflicts with decode macro definitions above.
+// V0=REV_BYTES V1=RESHUFFLE_MASK V2=SHIFT_RIGHT_MASK V3=MULHI_MASK V4=SHIFT_LEFT_MASK
+// V5=MULLO_MASK V6=RANGE1_END V7=RANGE0_END V8=LUT V9=X0 V10=X1 V11=X2
+//func encodeP9Asm(dst, src []byte, lut *[16]byte) int
+TEXT ·encodeP9Asm(SB),NOSPLIT,$0
+	MOVD dst_base+0(FP), R4
+	MOVD src_base+24(FP), R5
+	MOVD src_len+32(FP), R6
+	MOVD lut+48(FP), R7
+	LXVD2X (R7), V8 // LUT
+
+	// Load constants
+	MOVD $base64_const<>(SB), R8
+	LXVD2X (R8), V0 // REV_BYTES
+#ifdef GOARCH_ppc64le
+	VPERM V8, V8, V0, V8 // VPERM LUT, LUT, REV_BYTES, LUT
+	MOVD $0x10, R9
+#else
+	XXPERMDI V0, V0, $2, V0 // XXPERMDI REV_BYTES, REV_BYTES, $2, REV_BYTES
+	MOVD $0x20, R9
+#endif
+	LXVD2X (R8)(R9), V1 // RESHUFFLE_MASK
+	MOVD $0x30, R9
+	LXVD2X (R8)(R9), V3 // MULHI_MASK
+	MOVD $0x40, R9
+	LXVD2X (R8)(R9), V2 // SHIFT_RIGHT_MASK
+	MOVD $0x50, R9
+	LXVD2X (R8)(R9), V5 // MULLO_MASK
+	MOVD $0x60, R9
+	LXVD2X (R8)(R9), V4 // SHIFT_LEFT_MASK
+	MOVD $0x70, R9
+	LXVD2X (R8)(R9), V6 // RANGE1_END
+	MOVD $0x80, R9
+	LXVD2X (R8)(R9), V7 // RANGE0_END
+
+	MOVD $0, R7
+	MOVD R7, R8
+
+p9encodeloop:
+		LXVD2X (R5)(R8), V9 // X0
+		VPERM V9, V9, V1, V9     // VPERM X0, X0, RESHUFFLE_MASK, X0
+		VAND V9, V3, V10         // VAND X0, MULHI_MASK, X1
+		VSRH V10, V2, V10        // VSRH X1, SHIFT_RIGHT_MASK, X1
+		VAND V9, V5, V9          // VAND X0, MULLO_MASK, X0
+		VSLH V9, V4, V9          // VSLH X0, SHIFT_LEFT_MASK, X0
+		VOR V9, V10, V9          // VOR X0, X1, X0
+		VSUBUBS V9, V6, V10      // VSUBUBS X0, RANGE1_END, X1
+		VCMPGTUB V9, V7, V11     // VCMPGTUB X0, RANGE0_END, X2
+		VSUBUBM V10, V11, V10    // VSUBUBM X1, X2, X1
+		VPERM V8, V8, V10, V11   // VPERM LUT, LUT, X1, X2
+		VADDUBM V11, V9, V9      // VADDUBM X2, X0, X0
+
+#ifdef GOARCH_ppc64le
+		STXVB16X V9, (R4)(R7)   // natural byte-order store, no XXPERMDI needed
+#else
+		VPERM V9, V9, V0, V9     // VPERM X0, X0, REV_BYTES, X0
+		STXVD2X V9, (R4)(R7)
+#endif
+		ADD $-12, R6
+		ADD $16, R7
+		ADD $12, R8
+		CMP R6, $16
+		BGE p9encodeloop
+
+done_p9encode:
+	MOVD R7, ret+56(FP)
+	RET
+
+// Power9+ standard decode: uses LXVB16X (natural byte-order load) instead of
+// LXVD2X + VPERM(REV_BYTES) on ppc64le, and VMSUMUHM for PMADDWD.
+//func decodeStdP9Asm(dst, src []byte) int
+TEXT ·decodeStdP9Asm(SB),NOSPLIT,$0
+	MOVD dst_base+0(FP), R4
+	MOVD src_base+24(FP), R5
+	MOVD src_len+32(FP), R6
+
+	// No REV_BYTES loading: LXVB16X gives natural byte order on ppc64le directly.
+	// (On ppc64 BE, LXVB16X == LXVD2X; ppc64 BE never needed REV_BYTES here.)
+	VSPLTISB $0, ZERO
+	VSPLTISB $0x4, FOUR
+	VSPLTISB $0x0F, NIBBLE_MASK
+	MOVD $decode_const<>(SB), R8
+	LXVD2X (R8), LUT_HI
+	MOVD $0x10, R9
+	LXVD2X (R8)(R9), LUT_LO
+	MOVD $0x20, R9
+	LXVD2X (R8)(R9), DECODE_END
+	MOVD $0x30, R9
+	LXVD2X (R8)(R9), LUT_ROLL
+	MOVD $0x80, R9
+	LXVD2X (R8)(R9), RESHUFFLE_CONST0
+	MOVD $0x90, R9
+	LXVD2X (R8)(R9), RESHUFFLE_CONST1
+#ifdef GOARCH_ppc64le
+	MOVD $0xA0, R9
+#else
+	MOVD $0xB0, R9
+#endif
+	LXVD2X (R8)(R9), RESHUFFLE_MASK
+
+	MOVD $0, R7
+	MOVD R7, R8
+p9stdloop:
+		// LXVB16X: natural byte-order load on both ppc64le and ppc64 BE.
+		// On ppc64le this replaces LXVD2X + VPERM(REV_BYTES).
+		// On ppc64 BE, LXVB16X == LXVD2X (no REV_BYTES was needed there either).
+		LXVB16X (R5)(R7), X0
+		// validate input
+		VSRB X0, FOUR, X1 // high nibble
+		VAND X0, NIBBLE_MASK, X2
+		VPERM LUT_HI, LUT_HI, X1, X3
+		VPERM LUT_LO, LUT_LO, X2, X2
+		VAND X3, X2, X2
+		VCMPEQUBCC X2, ZERO, X3
+		BGE CR6, done_p9std
+
+		// translate
+		VCMPEQUB X0, DECODE_END, X2
+		VADDUBM X1, X2, X1
+
+		VPERM LUT_ROLL, LUT_ROLL, X1, X1
+		VADDUBM X0, X1, X0
+
+		// PMADDUBSW
+		VMULEUB X0, RESHUFFLE_CONST0, X1
+		VMULOUB X0, RESHUFFLE_CONST0, X2
+		VADDUHM X1, X2, X0
+		// PMADDWD: vmsumuhm X0, X0, RESHUFFLE_CONST1, ZERO
+		WORD $0x114A3BA6
+
+		VPERM X0, X0, RESHUFFLE_MASK, X0
+		STXVD2X X0, (R4)(R8)
+
+		ADD $-16, R6
+		ADD $16, R7
+		ADD $12, R8
+		CMP R6, $24
+		BGE p9stdloop
+
+done_p9std:
+	MOVD R6, ret+48(FP)
+	RET
+
+// Power9+ URL decode: same as decodeStdP9Asm but for the URL alphabet.
+//func decodeUrlP9Asm(dst, src []byte) int
+TEXT ·decodeUrlP9Asm(SB),NOSPLIT,$0
+	MOVD dst_base+0(FP), R4
+	MOVD src_base+24(FP), R5
+	MOVD src_len+32(FP), R6
+
+	// No REV_BYTES loading (same rationale as decodeStdP9Asm).
+	VSPLTISB $0, ZERO
+	VSPLTISB $0x4, FOUR
+	VSPLTISB $0x0F, NIBBLE_MASK
+	MOVD $decode_const<>(SB), R8
+	MOVD $0x40, R9
+	LXVD2X (R8)(R9), LUT_HI
+	MOVD $0x50, R9
+	LXVD2X (R8)(R9), LUT_LO
+	MOVD $0x60, R9
+	LXVD2X (R8)(R9), DECODE_END
+	MOVD $0x70, R9
+	LXVD2X (R8)(R9), LUT_ROLL
+	MOVD $0x80, R9
+	LXVD2X (R8)(R9), RESHUFFLE_CONST0
+	MOVD $0x90, R9
+	LXVD2X (R8)(R9), RESHUFFLE_CONST1
+#ifdef GOARCH_ppc64le
+	MOVD $0xA0, R9
+#else
+	MOVD $0xB0, R9
+#endif
+	LXVD2X (R8)(R9), RESHUFFLE_MASK
+
+	MOVD $0, R7
+	MOVD R7, R8
+p9urlloop:
+		LXVB16X (R5)(R7), X0
+		// validate input
+		VSRB X0, FOUR, X1 // high nibble
+		VAND X0, NIBBLE_MASK, X2
+		VPERM LUT_HI, LUT_HI, X1, X3
+		VPERM LUT_LO, LUT_LO, X2, X2
+		VAND X3, X2, X2
+		VCMPEQUBCC X2, ZERO, X3
+		BGE CR6, done_p9url
+
+		// translate
+		VCMPGTUB X0, DECODE_END, X2
+		VSUBUBM X1, X2, X1
+
+		VPERM LUT_ROLL, LUT_ROLL, X1, X1
+		VADDUBM X0, X1, X0
+
+		// PMADDUBSW
+		VMULEUB X0, RESHUFFLE_CONST0, X1
+		VMULOUB X0, RESHUFFLE_CONST0, X2
+		VADDUHM X1, X2, X0
+		// PMADDWD: vmsumuhm X0, X0, RESHUFFLE_CONST1, ZERO
+		WORD $0x114A3BA6
+
+		VPERM X0, X0, RESHUFFLE_MASK, X0
+		STXVD2X X0, (R4)(R8)
+
+		ADD $-16, R6
+		ADD $16, R7
+		ADD $12, R8
+		CMP R6, $24
+		BGE p9urlloop
+
+done_p9url:
 	MOVD R6, ret+48(FP)
 	RET

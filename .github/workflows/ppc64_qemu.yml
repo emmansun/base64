@@ -1,0 +1,46 @@
+# QEMU user-mode supports ppc64 big-endian via qemu-ppc64-static from apt.
+# docker/setup-qemu-action only covers ppc64le, so we install qemu-user-static
+# directly, which registers binfmt_misc for big-endian PowerPC 64-bit ELF binaries.
+
+name: ppc64-qemu
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+
+  test:
+    strategy:
+      matrix:
+        go-version: [1.25.x]
+        # power8: IsPOWER9=false → exercises P8 code paths
+        # power9: IsPOWER9=true  → exercises P9 code paths (LXVB16X == LXVD2X on BE,
+        #         encodeP9Asm BE still uses VPERM+STXVD2X same as P8)
+        qemu_cpu: [power8, power9]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Set up QEMU (ppc64 big-endian)
+      # docker/setup-qemu-action only supports ppc64le; install qemu-user-static
+      # from apt which includes qemu-ppc64-static and registers binfmt_misc for
+      # big-endian PowerPC 64-bit ELF binaries.
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y qemu-user-static
+
+    - name: Check out code
+      uses: actions/checkout@v5
+
+    - name: Test (${{ matrix.qemu_cpu }})
+      run: go test -v ./...
+      env:
+        GOARCH: ppc64
+        GOOS: linux
+        QEMU_CPU: ${{ matrix.qemu_cpu }}
