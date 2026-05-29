@@ -12,6 +12,9 @@ import (
 )
 
 func TestStdEncodeP9Asm(t *testing.T) {
+	if !usePOWER9 {
+		t.Skip("requires Power9")
+	}
 	pairs := []testpair{
 		{"abcdefghijkl0000", "YWJjZGVmZ2hpamts"},
 		{"\x2b\xf7\xcc\x27\x01\xfe\x43\x97\xb4\x9e\xbe\xed\x5a\xcc\x70\x90", "K/fMJwH+Q5e0nr7t"},
@@ -34,6 +37,9 @@ func TestStdEncodeP9Asm(t *testing.T) {
 }
 
 func TestURLEncodeP9Asm(t *testing.T) {
+	if !usePOWER9 {
+		t.Skip("requires Power9")
+	}
 	pairs := []testpair{
 		{"!?$*&()'-=@~0000", "IT8kKiYoKSctPUB-"},
 		{"\x2b\xf7\xcc\x27\x01\xfe\x43\x97\xb4\x9e\xbe\xed\x5a\xcc\x70\x90", "K_fMJwH-Q5e0nr7t"},
@@ -55,6 +61,9 @@ func TestURLEncodeP9Asm(t *testing.T) {
 }
 
 func TestStdDecodeP9Asm(t *testing.T) {
+	if !usePOWER9 {
+		t.Skip("requires Power9")
+	}
 	pairs := []testpair{
 		{"abcdefghijkl", "YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts"},
 		{"\x2b\xf7\xcc\x27\x01\xfe\x43\x97\xb4\x9e\xbe\xed", "K/fMJwH+Q5e0nr7tK/fMJwH+Q5e0nr7t"},
@@ -76,6 +85,9 @@ func TestStdDecodeP9Asm(t *testing.T) {
 }
 
 func TestStdDecodeP9AsmWithError(t *testing.T) {
+	if !usePOWER9 {
+		t.Skip("requires Power9")
+	}
 	dst := make([]byte, 16)
 	src := []byte("-YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts")
 	ret := decodeStdP9Asm(dst, src)
@@ -85,6 +97,9 @@ func TestStdDecodeP9AsmWithError(t *testing.T) {
 }
 
 func TestUrlDecodeP9Asm(t *testing.T) {
+	if !usePOWER9 {
+		t.Skip("requires Power9")
+	}
 	pairs := []testpair{
 		{"!?$*&()'-=@~", "IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-"},
 		{"\x2b\xf7\xcc\x27\x01\xfe\x43\x97\xb4\x9e\xbe\xed", "K_fMJwH-Q5e0nr7tK_fMJwH-Q5e0nr7t"},
@@ -106,6 +121,9 @@ func TestUrlDecodeP9Asm(t *testing.T) {
 }
 
 func TestUrlDecodeP9AsmWithError(t *testing.T) {
+	if !usePOWER9 {
+		t.Skip("requires Power9")
+	}
 	dst := make([]byte, 16)
 	src := []byte("IT8kKiYoKSctPUB/IT8kKiYoKSctPUB/")
 	ret := decodeUrlP9Asm(dst, src)
