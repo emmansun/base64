@@ -368,7 +368,8 @@ p9encodeloop:
 		VADDUBM V11, V9, V9      // VADDUBM X2, X0, X0
 
 #ifdef GOARCH_ppc64le
-		STXVB16X V9, (R4)(R7)   // natural byte-order store, no XXPERMDI needed
+		XXPERMDI V9, V9, $2, V9  // swap 8-byte halves before STXVD2X (same as encodeAsm)
+		STXVD2X V9, (R4)(R7)
 #else
 		VPERM V9, V9, V0, V9     // VPERM X0, X0, REV_BYTES, X0
 		STXVD2X V9, (R4)(R7)
