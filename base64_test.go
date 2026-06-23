@@ -581,6 +581,139 @@ func TestDecoderRaw(t *testing.T) {
 	}
 }
 
+func TestForgivingDecode(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"SGVsbG8=", "Hello"},
+		{"SGVs\nbG8=", "Hello"},
+		{"  SGVsbG8=  ", "Hello"},
+		{"SGVs\tbG8=", "Hello"},
+		{"SGVs\fbG8=", "Hello"},
+		{"SGVs\n\r\t bG8=", "Hello"},
+		{"SGVs\bG8=", ""},
+	}
+	for _, c := range cases {
+		got, err := StdEncoding.Forgiving().DecodeString(c.in)
+		if err != nil {
+			if c.want != "" {
+				t.Errorf("Forgiving().DecodeString(%q) returned error: %v", c.in, err)
+			}
+			continue
+		}
+		if string(got) != c.want {
+			t.Errorf("Forgiving().DecodeString(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestForgivingDecoderStream(t *testing.T) {
+	orig := "Hello, World!"
+	tests := []struct {
+		name      string
+		encoded   string
+		want      string
+		wantErr   bool
+		forgiving bool
+	}{
+		{
+			name:      "Default mode rejects spaces",
+			encoded:   "SGVs bG8=",
+			wantErr:   true,
+			forgiving: false,
+		},
+		{
+			name:      "Default mode rejects tabs",
+			encoded:   "SGVs\tbG8=",
+			wantErr:   true,
+			forgiving: false,
+		},
+		{
+			name:      "Forgiving mode handles basic newlines",
+			encoded:   "SGVs\nbG8sIFdvcmxkIQ==",
+			want:      orig,
+			forgiving: true,
+		},
+		{
+			name:      "Forgiving mode handles mixed whitespaces",
+			encoded:   "  SGVs\nbG8s\tIFdv\r\ncmxkIQ==  ",
+			want:      orig,
+			forgiving: true,
+		},
+		{
+			name:      "Forgiving mode handles all 5 whitespace types",
+			encoded:   " S\tG\nV\rs\bG\f8=",
+			wantErr:   true,
+			forgiving: true,
+		},
+		{
+			name:      "Forgiving mode handles all 5 valid whitespaces",
+			encoded:   " S\tG\nV\rs bG\f8=",
+			want:      "Hello",
+			forgiving: true,
+		},
+		{
+			name:      "Forgiving mode handles PEM style (64 chars per line)",
+			encoded:   "SGVsbG8sIFdvcmxkISEx\nSGVsbG8sIFdvcmxkISEx\nSGVsbG8sIFdvcmxkISEx\n",
+			want:      "Hello, World!!1Hello, World!!1Hello, World!!1",
+			forgiving: true,
+		},
+		{
+			name:      "Trailing garbage after padding in forgiving mode",
+			encoded:   "SGVsbG8sIFdvcmxkIQ== \t garbage",
+			wantErr:   true,
+			forgiving: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var enc *Encoding
+			if tt.forgiving {
+				enc = StdEncoding.Forgiving()
+			} else {
+				enc = StdEncoding
+			}
+
+			bufferSizes := []int{1, 2, 3, 4, 5, 8, 16, 32, 1024}
+
+			for _, bufSize := range bufferSizes {
+				t.Run(string(rune('0'+bufSize)), func(t *testing.T) {
+					r := NewDecoder(enc, bytes.NewReader([]byte(tt.encoded)))
+
+					var out bytes.Buffer
+					buf := make([]byte, bufSize)
+
+					for {
+						n, err := r.Read(buf)
+						if n > 0 {
+							out.Write(buf[:n])
+						}
+						if err == io.EOF {
+							break
+						}
+						if err != nil {
+							if !tt.wantErr {
+								t.Fatalf("unexpected error with bufsize %d: %v", bufSize, err)
+							}
+							return
+						}
+					}
+
+					if tt.wantErr {
+						t.Fatalf("expected error but got none (bufsize %d)", bufSize)
+					}
+
+					if got := out.String(); got != tt.want {
+						t.Errorf("bufsize %d: got %q, want %q", bufSize, got, tt.want)
+					}
+				})
+			}
+		})
+	}
+}
+
 func BenchmarkEncode(b *testing.B) {
 	sizes := []int64{16, 28, 40, 128, 256, 512, 1024, 2048, 4096, 8192}
 	data := make([]byte, 8192)
