@@ -14,7 +14,7 @@ jobs:
   test:
     strategy:
       matrix:
-        go-version: [1.25.x]
+        go-version: [1.26.x]
         # power8: IsPOWER9=false → exercises P8 code paths (VMSUMUHM WORD, LXVD2X+VPERM, XXPERMDI+STXVD2X)
         # power9: IsPOWER9=true  → exercises P9 code paths (LXVB16X, STXVB16X)
         qemu_cpu: [power8, power9]
