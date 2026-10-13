@@ -500,17 +500,23 @@ avx512_ret:
 	VPMADDWD mask1, in_out, in_out;    \ // swap and merge 12-bit words into a 24-bit word
 	VPSHUFB mask2, in_out, in_out
 
-//func decodeStdAsm(dst, src []byte) int
-TEXT ·decodeStdAsm(SB),NOSPLIT,$0
+// decodeAsm decodes the standard (url == 0) or URL-safe (url == 1) base64
+// prefix. Both alphabets share the algorithm below; they differ only in the
+// LUTs and in the translate step (std adds the count of bytes equal to 0x2F,
+// url subtracts the count of bytes greater than 0x5E). The flag in R11
+// selects the per-alphabet paths via well-predicted branches.
+// func decodeAsm(dst, src []byte, url bool) int
+TEXT ·decodeAsm(SB),NOSPLIT,$0
 	MOVQ dst_base+0(FP), AX
 	MOVQ src_base+24(FP), BX
 	MOVQ src_len+32(FP), CX
+	MOVBQZX url+48(FP), R11
 
 	CMPQ CX, $64
-	JB   stddec_not_avx512
+	JB   dec_not_avx512
 	CMPB ·useAVX512VBMI(SB), $1
 	JE   avx512
-stddec_not_avx512:
+dec_not_avx512:
 	CMPB ·useAVX2(SB), $1
 	JE   avx2
 
@@ -524,17 +530,33 @@ loop:
 		MOVOU (BX), X0
 
 		// validate
+		TESTQ R11, R11
+		JNE   sse_url_luts
 		MOVOU stddec_lut_hi<>(SB), X10 // lut_hi
 		MOVOU stddec_lut_lo<>(SB), X11 // lut_lo
+		JMP   sse_have_luts
+sse_url_luts:
+		MOVOU urldec_lut_hi<>(SB), X10 // lut_hi
+		MOVOU urldec_lut_lo<>(SB), X11 // lut_lo
+sse_have_luts:
 		SSE_DECODE_VALIDATE(X0, X1, X2, X10, X11, X12, SI)
 		CMPQ SI, $0
 		JNE done
 
 		// translate
+		TESTQ R11, R11
+		JNE   sse_url_translate
 		MOVOU nibble_mask<>(SB), X2
 		PCMPEQB X0, X2                  // compare 0x2F with in
 		PADDB X2, X1                    // add eq_2F with hi_nibbles
 		MOVOU stddec_lut_roll<>(SB), X2
+		JMP   sse_rolled
+sse_url_translate:
+		MOVOU X0, X2
+		PCMPGTB url_const_5e<>(SB), X2 // compare 0x5E with in
+		PSUBB X2, X1                   // sub gt_5E with hi_nibbles
+		MOVOU urldec_lut_roll<>(SB), X2
+sse_rolled:
 		PSHUFB X1, X2                   // shuffle lut roll
 		PADDB X2, X0                    // Now simply add the delta values to the input
 
@@ -547,17 +569,26 @@ loop:
 		JMP loop
 
 done:
-	MOVQ CX, ret+48(FP)
+	MOVQ CX, ret+56(FP)
 	RET
 
 avx2:
 	VBROADCASTI128 nibble_mask<>(SB), Y9
-	VBROADCASTI128 stddec_lut_hi<>(SB), Y10   // lut_hi
-	VBROADCASTI128 stddec_lut_lo<>(SB), Y11   // lut_lo
-	VBROADCASTI128 stddec_lut_roll<>(SB), Y12 // lut_lo
 	VBROADCASTI128 dec_reshuffle_const0<>(SB), Y6
 	VBROADCASTI128 dec_reshuffle_const1<>(SB), Y7
 	VBROADCASTI128 dec_reshuffle_mask<>(SB), Y8
+	TESTQ R11, R11
+	JNE   avx2_url_luts
+	VBROADCASTI128 stddec_lut_hi<>(SB), Y10   // lut_hi
+	VBROADCASTI128 stddec_lut_lo<>(SB), Y11   // lut_lo
+	VBROADCASTI128 stddec_lut_roll<>(SB), Y12 // lut_roll
+	JMP   avx2_start
+avx2_url_luts:
+	VBROADCASTI128 urldec_lut_hi<>(SB), Y10   // lut_hi
+	VBROADCASTI128 urldec_lut_lo<>(SB), Y11   // lut_lo
+	VBROADCASTI128 urldec_lut_roll<>(SB), Y12 // lut_roll
+	VBROADCASTI128 url_const_5e<>(SB), Y13
+avx2_start:
 
 avx2_loop:
 		CMPQ CX, $40
@@ -572,8 +603,15 @@ avx2_loop:
 		JNZ avx2_done
 
 		// translate
+		TESTQ R11, R11
+		JNE   avx2_url_translate
 		VPCMPEQB Y9, Y0, Y2 // compare 0x2F with in
 		VPADDB Y2, Y1, Y1   // add eq_2F with hi_nibbles
+		JMP   avx2_translated
+avx2_url_translate:
+		VPCMPGTB Y13, Y0, Y2 // compare 0x5E with in
+		VPSUBB Y2, Y1, Y1    // sub gt_5E with hi_nibbles
+avx2_translated:
 		VPSHUFB Y1, Y12, Y2 // shuffle lut roll
 		VPADDB Y2, Y0, Y0   // Now simply add the delta values to the input
 
@@ -600,8 +638,15 @@ avx2_tail:
 	JNZ avx2_done
 
 	// translate
+	TESTQ R11, R11
+	JNE   avx2_url_translate_tail
 	VPCMPEQB X9, X0, X2 // compare 0x2F with in
 	VPADDB X2, X1, X1   // add eq_2F with hi_nibbles
+	JMP   avx2_translated_tail
+avx2_url_translate_tail:
+	VPCMPGTB X13, X0, X2 // compare 0x5E with in
+	VPSUBB X2, X1, X1    // sub gt_5E with hi_nibbles
+avx2_translated_tail:
 	VPSHUFB X1, X12, X2 // shuffle lut roll
 	VPADDB X2, X0, X0   // Now simply add the delta values to the input
 
@@ -610,15 +655,22 @@ avx2_tail:
 	SUBQ $16, CX
 
 avx2_done:
-	MOVQ CX, ret+48(FP)
+	MOVQ CX, ret+56(FP)
 	VZEROUPPER
 	RET
 
 avx512:
 	// Load decode LUT split into two 64-byte halves for VPERMI2B.
-	// Z4 = LUT[0..63] (standard), Z5 = LUT[64..127] (standard)
+	// Z4 = LUT[0..63], Z5 = LUT[64..127] (standard or URL-safe per R11 flag)
+	TESTQ R11, R11
+	JNE   avx512_url_luts
 	VMOVDQU32 stddec512_lut_lo<>(SB), Z4
 	VMOVDQU32 stddec512_lut_hi<>(SB), Z5
+	JMP   avx512_start
+avx512_url_luts:
+	VMOVDQU32 urldec512_lut_lo<>(SB), Z4
+	VMOVDQU32 urldec512_lut_hi<>(SB), Z5
+avx512_start:
 	VBROADCASTI32X4 dec_reshuffle_const0<>(SB), Z6
 	VBROADCASTI32X4 dec_reshuffle_const1<>(SB), Z7
 	VBROADCASTI32X4 dec_reshuffle_mask<>(SB), Z8
@@ -668,188 +720,20 @@ avx512_done:
 	CMPQ CX, $24
 	JB avx512_ret
 	VBROADCASTI128 nibble_mask<>(SB), Y9
+	TESTQ R11, R11
+	JNE   avx512_url_tail_luts
 	VBROADCASTI128 stddec_lut_hi<>(SB), Y10
 	VBROADCASTI128 stddec_lut_lo<>(SB), Y11
 	VBROADCASTI128 stddec_lut_roll<>(SB), Y12
-	JMP avx2_loop
-avx512_ret:
-	MOVQ CX, ret+48(FP)
-	VZEROUPPER
-	RET
-
-//func decodeUrlAsm(dst, src []byte) int
-TEXT ·decodeUrlAsm(SB),NOSPLIT,$0
-	MOVQ dst_base+0(FP), AX
-	MOVQ src_base+24(FP), BX
-	MOVQ src_len+32(FP), CX
-
-	CMPQ CX, $64
-	JB   urldec_not_avx512
-	CMPB ·useAVX512VBMI(SB), $1
-	JE   avx512
-urldec_not_avx512:
-	CMPB ·useAVX2(SB), $1
-	JE   avx2
-
-	PXOR X12, X12
-
-loop:
-		CMPQ CX, $24
-		JB done
-
-		// load data
-		MOVOU (BX), X0
-
-		// validate
-		MOVOU urldec_lut_hi<>(SB), X10 // lut_hi
-		MOVOU urldec_lut_lo<>(SB), X11 // lut_lo
-		SSE_DECODE_VALIDATE(X0, X1, X2, X10, X11, X12, SI)
-		CMPQ SI, $0
-		JNE done
-
-		// translate
-		MOVOU X0, X2
-		PCMPGTB url_const_5e<>(SB), X2 // compare 0x5E with in
-		PSUBB X2, X1                  // sub gt_5E with hi_nibbles
-		MOVOU urldec_lut_roll<>(SB), X2
-		PSHUFB X1, X2                 // shuffle lut roll
-		PADDB X2, X0                  // Now simply add the delta values to the input
-
-		SSE_DECODE_RESHUFFLE(X0)
-		MOVOU X0, (AX)
-
-		SUBQ $16, CX
-		LEAQ 12(AX), AX
-		LEAQ 16(BX), BX
-		JMP loop
-
-done:
-	MOVQ CX, ret+48(FP)
-	RET
-
-avx2:
-	VBROADCASTI128 nibble_mask<>(SB), Y9
-	VBROADCASTI128 urldec_lut_hi<>(SB), Y10   // lut_hi
-	VBROADCASTI128 urldec_lut_lo<>(SB), Y11   // lut_lo
-	VBROADCASTI128 urldec_lut_roll<>(SB), Y12 // lut_lo
-	VBROADCASTI128 dec_reshuffle_const0<>(SB), Y6
-	VBROADCASTI128 dec_reshuffle_const1<>(SB), Y7
-	VBROADCASTI128 dec_reshuffle_mask<>(SB), Y8
-	VBROADCASTI128 url_const_5e<>(SB), Y13
-
-avx2_loop:
-		CMPQ CX, $40
-		JB avx2_tail
-	
-		// load data
-		VMOVDQU (BX), Y0
-
-		// validate
-		AVX2_DECODE_HI_LO(Y0, Y1, Y3, Y4, Y9, Y10, Y11)
-		VPTEST Y3, Y4
-		JNZ avx2_done
-
-		// translate
-		VPCMPGTB Y13, Y0, Y2 // compare 0x5E with in
-		VPSUBB Y2, Y1, Y1    // sub gt_5E with hi_nibbles
-		VPSHUFB Y1, Y12, Y2  // shuffle lut roll
-		VPADDB Y2, Y0, Y0    // Now simply add the delta values to the input
-
-		AVX2_DECODE_RESHUFFLE(Y0, Y6, Y7, Y8)
-		VEXTRACTI128 $1, Y0, X1
-		VMOVDQU X0, (AX)
-		VMOVDQU X1, 12(AX)
-	
-		SUBQ $32, CX
-		LEAQ 24(AX), AX
-		LEAQ 32(BX), BX
-		JMP avx2_loop
-
-avx2_tail:
-	CMPQ CX, $24
-	JB avx2_done
-
-	// load data
-	VMOVDQU (BX), X0
-
-	// validate
-	AVX2_DECODE_HI_LO(X0, X1, X3, X4, X9, X10, X11)
-	VPTEST X3, X4
-	JNZ avx2_done
-
-	// translate
-	VPCMPGTB X13, X0, X2 // compare 0x5E with in
-	VPSUBB X2, X1, X1    // sub gt_5E with hi_nibbles
-	VPSHUFB X1, X12, X2  // shuffle lut roll
-	VPADDB X2, X0, X0    // Now simply add the delta values to the input
-
-	AVX2_DECODE_RESHUFFLE(X0, X6, X7, X8)
-	VMOVDQU X0, (AX)
-	SUBQ $16, CX
-
-avx2_done:
-	MOVQ CX, ret+48(FP)
-	VZEROUPPER
-	RET
-
-avx512:
-	// Load URL-safe decode LUT split into two 64-byte halves for VPERMI2B.
-	// Z4 = LUT[0..63] (url), Z5 = LUT[64..127] (url)
-	VMOVDQU32 urldec512_lut_lo<>(SB), Z4
-	VMOVDQU32 urldec512_lut_hi<>(SB), Z5
-	VBROADCASTI32X4 dec_reshuffle_const0<>(SB), Z6
-	VBROADCASTI32X4 dec_reshuffle_const1<>(SB), Z7
-	VBROADCASTI32X4 dec_reshuffle_mask<>(SB), Z8
-	VMOVDQU32 dec512_compress<>(SB), Z3   // compress permutation table (loaded once)
-
-avx512_loop:
-		CMPQ CX, $64
-		JB avx512_done
-
-		// Load 64 base64-encoded input bytes
-		VMOVDQU32 (BX), Z0
-
-		// Validate + translate: VPERMI2B uses Z0[i] bit6 to choose Z4 or Z5.
-		VPERMI2B Z5, Z4, Z0
-
-		// Detect any illegal characters (0xFF has bit7 set; valid values are 0x00..0x3F)
-		VPXORD Z2, Z2, Z2          // Z2 = 0
-		VPCMPB $1, Z2, Z0, K1      // K1[i] = 1 if Z0[i] < 0 (bit7 set = invalid char)
-		KTESTQ K1, K1
-		JNZ avx512_done             // bail on any invalid byte
-
-		// Reshuffle 4×6-bit → 3×8-bit per 4-byte group (512-bit wide)
-		VPMADDUBSW Z6, Z0, Z0
-		VPMADDWD Z7, Z0, Z0
-		VPSHUFB Z8, Z0, Z0
-
-		// Compress 64 bytes → 48 contiguous bytes using VPERMB.
-		// VPERMB Z0, Z3, Z0 means Z0[i] = old_Z0[Z3[i] & 63]: use Z3 as gather indices into Z0.
-		VPERMB Z0, Z3, Z0
-
-		// Store 48 output bytes: 32-byte YMM store + extract lane 2 for last 16
-		VMOVDQU Y0, (AX)
-		VEXTRACTI32X4 $2, Z0, X1
-		VMOVDQU X1, 32(AX)
-
-		SUBQ $64, CX
-		LEAQ 48(AX), AX
-		LEAQ 64(BX), BX
-		JMP avx512_loop
-
-avx512_done:
-	// Fall back to AVX2 for the remaining tail (CX in [24..63]).
-	// Y6-Y8 (dec_reshuffle_const0/1, dec_reshuffle_mask) are already valid as
-	// the lower 256 bits of Z6-Z8; no VZEROUPPER needed (AVX2 uses VEX encoding).
-	CMPQ CX, $24
-	JB avx512_ret
-	VBROADCASTI128 nibble_mask<>(SB), Y9
+	JMP   avx512_tail_start
+avx512_url_tail_luts:
 	VBROADCASTI128 urldec_lut_hi<>(SB), Y10
 	VBROADCASTI128 urldec_lut_lo<>(SB), Y11
 	VBROADCASTI128 urldec_lut_roll<>(SB), Y12
 	VBROADCASTI128 url_const_5e<>(SB), Y13
+avx512_tail_start:
 	JMP avx2_loop
 avx512_ret:
-	MOVQ CX, ret+48(FP)
+	MOVQ CX, ret+56(FP)
 	VZEROUPPER
 	RET

@@ -46,38 +46,24 @@ func encodeAsm(dst, src []byte, lut *[64]byte) int
 //go:noescape
 func decodeAsm(dst, src []byte, lut *[256]byte) int
 
-func encode(enc *Encoding, dst, src []byte) {
-	if supportRVV && len(src) >= 16 && enc.lut != nil {
-		encoded := encodeAsm(dst, src, &enc.encode)
-		if encoded > 0 {
-			src = src[(encoded/4)*3:]
-			dst = dst[encoded:]
-		}
+// encodeSimd does a vector LUT lookup into the raw 64-byte alphabet table,
+// so custom alphabets are supported as well.
+func encodeSimd(enc *Encoding, dst, src []byte) int {
+	if !supportRVV {
+		return 0
 	}
-	encodeGeneric(enc, dst, src)
+	return encodeAsm(dst, src, &enc.encode)
 }
 
-func decode(enc *Encoding, dst, src []byte) (int, error) {
-	srcLen := len(src)
-	if supportRVV && srcLen >= 24 {
-		remain := srcLen
-		if enc.lut == &encodeStdLut {
-			remain = decodeAsm(dst, src, &dencodeStdLut)
-		} else if enc.lut == &encodeURLLut {
-			remain = decodeAsm(dst, src, &dencodeUrlLut)
-		}
-
-		if remain < srcLen {
-			remain = srcLen - remain
-			src = src[remain:]
-			dstStart := (remain / 4) * 3
-			dst = dst[dstStart:]
-			n, err := decodeGeneric(enc, dst, src)
-			if cerr, ok := err.(CorruptInputError); ok {
-				return n + dstStart, CorruptInputError(int(cerr) + remain)
-			}
-			return n + dstStart, err
-		}
+func decodeSimd(enc *Encoding, dst, src []byte) int {
+	if !supportRVV {
+		return len(src)
 	}
-	return decodeGeneric(enc, dst, src)
+	switch enc.variant {
+	case alphabetStd:
+		return decodeAsm(dst, src, &dencodeStdLut)
+	case alphabetURL:
+		return decodeAsm(dst, src, &dencodeUrlLut)
+	}
+	return len(src)
 }

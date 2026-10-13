@@ -28,39 +28,22 @@ func decodeStdAsm(dst, src []byte) int
 //go:noescape
 func decodeUrlAsm(dst, src []byte) int
 
-func encode(enc *Encoding, dst, src []byte) {
-	if useLoong64ASM() && len(src) >= 16 && enc.lut != nil {
-		encoded := encodeAsm(dst, src, enc.lut)
-		if encoded > 0 {
-			src = src[(encoded/4)*3:]
-			dst = dst[encoded:]
-		}
+func encodeSimd(enc *Encoding, dst, src []byte) int {
+	if !useLoong64ASM() || enc.variant == alphabetCustom {
+		return 0
 	}
-	encodeGeneric(enc, dst, src)
+	return encodeAsm(dst, src, enc.lut)
 }
 
-func decode(enc *Encoding, dst, src []byte) (int, error) {
-	srcLen := len(src)
-	if useLoong64ASM() && srcLen >= 24 {
-		remain := srcLen
-		if enc.lut == &encodeStdLut {
-			remain = decodeStdAsm(dst, src)
-		} else if enc.lut == &encodeURLLut {
-			remain = decodeUrlAsm(dst, src)
-		}
-
-		if remain < srcLen {
-			// decoded by SIMD
-			remain = srcLen - remain // remain is decoded length now
-			src = src[remain:]
-			dstStart := (remain / 4) * 3
-			dst = dst[dstStart:]
-			n, err := decodeGeneric(enc, dst, src)
-			if cerr, ok := err.(CorruptInputError); ok {
-				return n + dstStart, CorruptInputError(int(cerr) + remain)
-			}
-			return n + dstStart, err
-		}
+func decodeSimd(enc *Encoding, dst, src []byte) int {
+	if !useLoong64ASM() {
+		return len(src)
 	}
-	return decodeGeneric(enc, dst, src)
+	switch enc.variant {
+	case alphabetStd:
+		return decodeStdAsm(dst, src)
+	case alphabetURL:
+		return decodeUrlAsm(dst, src)
+	}
+	return len(src)
 }

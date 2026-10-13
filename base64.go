@@ -16,6 +16,17 @@ import (
  * Encodings
  */
 
+// alphabetKind identifies whether an Encoding uses one of the two RFC 4648
+// alphabets, for which the SIMD backends provide fast paths. Custom
+// alphabets are marked alphabetCustom.
+type alphabetKind uint8
+
+const (
+	alphabetCustom alphabetKind = iota
+	alphabetStd
+	alphabetURL
+)
+
 // An Encoding is a radix 64 encoding/decoding scheme, defined by a
 // 64-character alphabet. The most common encoding is the "base64"
 // encoding defined in RFC 4648 and used in MIME (RFC 2045) and PEM
@@ -28,6 +39,7 @@ type Encoding struct {
 	strict    bool
 	ignoreWS  bool
 	lut       *[16]byte
+	variant   alphabetKind // well-known alphabet marker for SIMD dispatch
 }
 
 const (
@@ -111,8 +123,10 @@ func NewEncoding(encoder string) *Encoding {
 	// for SIMD
 	if encoder == encodeURL {
 		e.lut = &encodeURLLut
+		e.variant = alphabetURL
 	} else if encoder == encodeStd {
 		e.lut = &encodeStdLut
+		e.variant = alphabetStd
 	}
 	return e
 }

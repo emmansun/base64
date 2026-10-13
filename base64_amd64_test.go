@@ -139,7 +139,7 @@ func TestAVX512StdDecodeAsm(t *testing.T) {
 		expected := []byte(p.decoded)
 		src := []byte(p.encoded)
 		dst := make([]byte, len(expected))
-		ret := decodeStdAsm(dst, src)
+		ret := decodeAsm(dst, src, false)
 		if ret == len(src) {
 			t.Errorf("len=%d: ret=len(src) means no bytes decoded", len(src))
 		}
@@ -161,7 +161,7 @@ func TestAVX512StdDecodeAsmWithError(t *testing.T) {
 	dst := make([]byte, 64)
 	// Invalid character '!' at position 0 — must bail immediately
 	src := []byte("!WJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts")
-	ret := decodeStdAsm(dst, src)
+	ret := decodeAsm(dst, src, false)
 	if ret != len(src) {
 		t.Errorf("expected ret=len(src)=%d on invalid input, got %d", len(src), ret)
 	}
@@ -186,7 +186,7 @@ func TestAVX512URLDecodeAsm(t *testing.T) {
 		expected := []byte(p.decoded)
 		src := []byte(p.encoded)
 		dst := make([]byte, len(expected))
-		ret := decodeUrlAsm(dst, src)
+		ret := decodeAsm(dst, src, true)
 		if ret == len(src) {
 			t.Errorf("len=%d: ret=len(src) means no bytes decoded", len(src))
 		}
@@ -208,7 +208,7 @@ func TestAVX512URLDecodeAsmWithError(t *testing.T) {
 	dst := make([]byte, 64)
 	// '/' is invalid in URL-safe base64
 	src := []byte("IT8kKiYoKSctPUB/IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-IT8kKiYoKSctPUB-")
-	ret := decodeUrlAsm(dst, src)
+	ret := decodeAsm(dst, src, true)
 	if ret != len(src) {
 		t.Errorf("expected ret=len(src)=%d on invalid input, got %d", len(src), ret)
 	}
@@ -399,7 +399,7 @@ func TestAVX512URLEncodeAVX2Tail(t *testing.T) {
 	}
 }
 
-// TestAVX512StdDecodeAVX2Tail verifies that decodeStdAsm's internal AVX2 fallback
+// TestAVX512StdDecodeAVX2Tail verifies that decodeAsm's internal AVX2 fallback
 // processes tail bytes after the AVX512 loop.  Input sizes chosen so that
 // (inputLen - 64*N) ∈ [24,63], hitting the avx2_loop / avx2_tail path.
 func TestAVX512StdDecodeAVX2Tail(t *testing.T) {
@@ -420,7 +420,7 @@ func TestAVX512StdDecodeAVX2Tail(t *testing.T) {
 		enc = enc[:encLen]
 
 		dst := make([]byte, rawSize)
-		remain := decodeStdAsm(dst, enc)
+		remain := decodeAsm(dst, enc, false)
 
 		// AVX2 tail must have consumed some bytes: remain < encLen.
 		if remain >= encLen {
@@ -453,7 +453,7 @@ func TestAVX512URLDecodeAVX2Tail(t *testing.T) {
 		enc = enc[:encLen]
 
 		dst := make([]byte, rawSize)
-		remain := decodeUrlAsm(dst, enc)
+		remain := decodeAsm(dst, enc, true)
 
 		if remain >= encLen {
 			t.Errorf("encLen=%d: remain=%d >= encLen; nothing decoded by ASM", encLen, remain)

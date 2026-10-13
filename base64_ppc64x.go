@@ -30,52 +30,28 @@ func decodeStdP9Asm(dst, src []byte) int
 //go:noescape
 func decodeUrlP9Asm(dst, src []byte) int
 
-func encode(enc *Encoding, dst, src []byte) {
-	if len(src) >= 16 && enc.lut != nil {
-		var encoded int
-		if usePOWER9 {
-			encoded = encodeP9Asm(dst, src, enc.lut)
-		} else {
-			encoded = encodeAsm(dst, src, enc.lut)
-		}
-		if encoded > 0 {
-			src = src[(encoded/4)*3:]
-			dst = dst[encoded:]
-		}
+func encodeSimd(enc *Encoding, dst, src []byte) int {
+	if enc.variant == alphabetCustom {
+		return 0
 	}
-	encodeGeneric(enc, dst, src)
+	if usePOWER9 {
+		return encodeP9Asm(dst, src, enc.lut)
+	}
+	return encodeAsm(dst, src, enc.lut)
 }
 
-func decode(enc *Encoding, dst, src []byte) (int, error) {
-	srcLen := len(src)
-	if srcLen >= 24 {
-		remain := srcLen
-		if enc.lut == &encodeStdLut {
-			if usePOWER9 {
-				remain = decodeStdP9Asm(dst, src)
-			} else {
-				remain = decodeStdAsm(dst, src)
-			}
-		} else if enc.lut == &encodeURLLut {
-			if usePOWER9 {
-				remain = decodeUrlP9Asm(dst, src)
-			} else {
-				remain = decodeUrlAsm(dst, src)
-			}
+func decodeSimd(enc *Encoding, dst, src []byte) int {
+	switch enc.variant {
+	case alphabetStd:
+		if usePOWER9 {
+			return decodeStdP9Asm(dst, src)
 		}
-
-		if remain < srcLen {
-			// decoded by SIMD
-			remain = srcLen - remain // remain is decoded length now
-			src = src[remain:]
-			dstStart := (remain / 4) * 3
-			dst = dst[dstStart:]
-			n, err := decodeGeneric(enc, dst, src)
-			if cerr, ok := err.(CorruptInputError); ok {
-				return n + dstStart, CorruptInputError(int(cerr) + remain)
-			}
-			return n + dstStart, err
+		return decodeStdAsm(dst, src)
+	case alphabetURL:
+		if usePOWER9 {
+			return decodeUrlP9Asm(dst, src)
 		}
+		return decodeUrlAsm(dst, src)
 	}
-	return decodeGeneric(enc, dst, src)
+	return len(src)
 }

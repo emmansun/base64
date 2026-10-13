@@ -47,7 +47,7 @@ func TestStdDecodeAsm(t *testing.T) {
 		src := []byte(p.encoded)
 		dst := make([]byte, len(expected))
 
-		ret := decodeStdAsm(dst, src)
+		ret := decodeSimd(StdEncoding, dst, src)
 		if ret == len(src) {
 			t.Errorf("should return decode")
 		}
@@ -60,7 +60,7 @@ func TestStdDecodeAsm(t *testing.T) {
 func TestStdDecodeAsmWithError(t *testing.T) {
 	dst := make([]byte, 16)
 	src := []byte("-YWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamtsYWJjZGVmZ2hpamts")
-	ret := decodeStdAsm(dst, src)
+	ret := decodeSimd(StdEncoding, dst, src)
 	if ret != len(src) {
 		t.Errorf("should return original length")
 	}
@@ -99,7 +99,7 @@ func TestUrlDecodeAsm(t *testing.T) {
 		src := []byte(p.encoded)
 		dst := make([]byte, len(expected))
 
-		ret := decodeUrlAsm(dst, src)
+		ret := decodeSimd(URLEncoding, dst, src)
 		if ret == len(src) {
 			t.Errorf("should return decode")
 		}
@@ -112,7 +112,7 @@ func TestUrlDecodeAsm(t *testing.T) {
 func TestUrlDecodeAsmWithError(t *testing.T) {
 	dst := make([]byte, 16)
 	src := []byte("IT8kKiYoKSctPUB/IT8kKiYoKSctPUB/")
-	ret := decodeUrlAsm(dst, src)
+	ret := decodeSimd(URLEncoding, dst, src)
 	if ret != len(src) {
 		t.Errorf("should return original length")
 	}

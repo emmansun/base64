@@ -54,14 +54,14 @@ cpu.X86.HasAVX512F && cpu.X86.HasAVX512BW && cpu.X86.HasAVX512VBMI
 - 移除后减少约 100+ 行汇编代码，降低维护成本
 
 **移除范围：**
-- `base64_asm.go` 中删除 `var useAVX = cpu.X86.HasAVX`
+- `base64_amd64.go` 中删除 `var useAVX = cpu.X86.HasAVX`
 - `base64_amd64.s` 中删除 `encodeAsm` 的 `avx`/`avx_loop`/`avx_done` 分支
-- `base64_amd64.s` 中删除 `decodeStdAsm`/`decodeUrlAsm` 的 `avx`/`avx_loop`/`avx_done` 分支
+- `base64_amd64.s` 中删除 `decodeAsm(dst, src, url bool)` 的 `avx`/`avx_loop`/`avx_done` 分支
 - 删除 AVX_ENC / AVX_DECODE_VALIDATE / AVX_DECODE_RESHUFFLE 宏定义
 
 **保留路径（移除 AVX 后）：**
 ```
-encodeAsm / decodeStdAsm / decodeUrlAsm 内部 dispatch:
+encodeAsm / decodeAsm(dst, src, url bool) 内部 dispatch:
   useAVX512VBMI → avx512 路径（新增）
   useAVX2       → avx2 路径（保留）
   fallthrough   → SSE3 路径（保留）
@@ -84,14 +84,14 @@ enc_not_avx512:
 ```
 
 好处：
-- Go 层 `base64_asm.go` 的 `encode()` / `decode()` 完全不需要修改
+- Go 层 `base64_amd64.go` 的 `encodeSimd()` / `decodeSimd()` 完全不需要修改
 - 与 loong64 的 LSX/LASX 分支模式一致
 - 测试自动覆盖所有路径
-- **输入长度预检**：当 `CX < 64` 时直接跳过 AVX512 检查，避免加载无用的 ZMM 常量（每个函数各有独立 label：`enc_not_avx512`、`stddec_not_avx512`、`urldec_not_avx512`）
+- **输入长度预检**：当 `CX < 64` 时直接跳过 AVX512 检查，避免加载无用的 ZMM 常量（每个函数各有独立 label：`enc_not_avx512`、`dec_not_avx512`）
 
 ### 4. Go 层变量设计
 
-在 `base64_asm.go` 中新增：
+在 `base64_amd64.go` 中新增：
 ```go
 var useAVX512VBMI = cpu.X86.HasAVX512F && cpu.X86.HasAVX512BW && cpu.X86.HasAVX512VBMI
 ```
@@ -494,12 +494,12 @@ go run gen_lut.go
 ## 实现步骤（已全部完成 ✅）
 
 ### Phase 1: 准备工作 ✅
-1. 在 `base64_asm.go` 中新增 `useAVX512VBMI` 变量，删除 `useAVX`
+1. 在 `base64_amd64.go` 中新增 `useAVX512VBMI` 变量，删除 `useAVX`
 2. 验证编译通过
 
 ### Phase 2: 移除 AVX 路径 ✅
 3. 从 `base64_amd64.s` 中删除 AVX 宏和所有 AVX 分支代码
-4. 从 `base64_asm.go` 中删除 `useAVX` 变量
+4. 从 `base64_amd64.go` 中删除 `useAVX` 变量
 5. 验证 SSE3 和 AVX2 路径仍然正确（本地 `go test`）
 
 ### Phase 3: 实现 AVX512 Encode ✅
@@ -701,7 +701,7 @@ xxx_not_avx512:
 CMPB ·useAVX2(SB), $1
 JE   avx2
 ```
-每个函数用独立 label（`enc_not_avx512`、`stddec_not_avx512`、`urldec_not_avx512`）避免重名。
+每个函数用独立 label（`enc_not_avx512`、`dec_not_avx512`）避免重名。
 
 ### Decode 压缩存储
 
