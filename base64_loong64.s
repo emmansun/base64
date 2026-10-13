@@ -95,17 +95,17 @@ lsx_path:
 	
 loop:
 		VMOVQ (R6), V8               // load 16 bytes input
-		WORD $0xd502108              // VSHUFB RESHUFFLE_MASK, V8, V8, V8   // reshuffle bytes
+		VSHUFB RESHUFFLE_MASK, V8, V8, V8   // reshuffle bytes
 		VANDV MULHI_MASK, V8, V9
 		VSRLH SHIFT_RIGHT_MASK, V9, V9
 		VANDV MULLO_MASK, V8, V8
 		VSLLH SHIFT_LEFT_MASK, V8, V8
 		VORV V9, V8, V8
 
-		WORD $0x704c1509             // VSSUBBU RANGE1_END, V8, V9
-		WORD $0x700820ca             // VSLTBU V8, RANGE0_END, V10
+		VSSUBBU RANGE1_END, V8, V9
+		VSLTBU V8, RANGE0_END, V10
 		VSUBB V10, V9, V9
-		WORD $0xd549ce9              // VSHUFB V9, LUT, LUT, V9
+		VSHUFB V9, LUT, LUT, V9
 		VADDB V9, V8, V8
 		VMOVQ V8, (R5)               // store 16 bytes output
 
@@ -149,17 +149,17 @@ lasx_head:
 	// Load first 28 bytes: two 16-byte loads, overlap at byte 12
 	VMOVQ (R6), V8                 // bytes [0..15]
 	VMOVQ 12(R6), V9               // bytes [12..27]
-	WORD $0x77ec0928               // xvpermi.q X8, X9, 0x02: X8.Q0=keep, X8.Q1=X9.Q0 → X8={ [0..15] | [12..27] }
-	WORD $0x0d602108               // XVSHUFB X0, X8, X8, X8  // reshuffle (head layout)
+	XVPERMIQ $2, X9, X8             // X8.Q0=keep, X8.Q1=X9.Q0 → X8={ [0..15] | [12..27] }
+	XVSHUFB X0, X8, X8, X8          // reshuffle (head layout)
 	XVANDV X2, X8, X9
 	XVSRLH X1, X9, X9
 	XVANDV X4, X8, X8
 	XVSLLH X3, X8, X8
 	XVORV X9, X8, X8
-	WORD $0x744c1509               // XVSSUBBU X5, X8, X9
-	WORD $0x740820ca               // XVSLTBU X8, X6, X10
+	XVSSUBBU X5, X8, X9
+	XVSLTBU X8, X6, X10
 	XVSUBB X10, X9, X9
-	WORD $0x0d649ce9               // XVSHUFB X9, X7, X7, X9
+	XVSHUFB X9, X7, X7, X9
 	XVADDB X9, X8, X8
 	XVMOVQ X8, (R5)                // store full 256-bit (32 bytes)
 
@@ -171,16 +171,16 @@ lasx_loop:
 	BLTU R7, R10, lasx_tail
 	// Load 28 bytes borrowing 4 bytes before current pointer
 	XVMOVQ -4(R6), X8             // bytes [-4..27], 32 bytes total
-	WORD $0x0d66a108               // XVSHUFB X13, X8, X8, X8  // reshuffle (loop layout)
+	XVSHUFB X13, X8, X8, X8         // reshuffle (loop layout)
 	XVANDV X2, X8, X9
 	XVSRLH X1, X9, X9
 	XVANDV X4, X8, X8
 	XVSLLH X3, X8, X8
 	XVORV X9, X8, X8
-	WORD $0x744c1509               // XVSSUBBU X5, X8, X9
-	WORD $0x740820ca               // XVSLTBU X8, X6, X10
+	XVSSUBBU X5, X8, X9
+	XVSLTBU X8, X6, X10
 	XVSUBB X10, X9, X9
-	WORD $0x0d649ce9               // XVSHUFB X9, X7, X7, X9
+	XVSHUFB X9, X7, X7, X9
 	XVADDB X9, X8, X8
 	XVMOVQ X8, (R5)                // store full 256-bit (32 bytes)
 
@@ -239,8 +239,8 @@ loop:
 		// validate the input data
 		VSRLB $4, V8, V9      // high nibble
 		VANDB $0xf, V8, V10   // low nibble
-		WORD $0xd54842b       // VSHUFB V9, LUT_HI, LUT_HI, V11
-		WORD $0xd55084a       // VSHUFB V10, LUT_LO, LUT_LO, V10
+		VSHUFB V9, LUT_HI, LUT_HI, V11
+		VSHUFB V10, LUT_LO, LUT_LO, V10
 		VANDV V11, V10, V10
 		VSETEQV V10, FCC0
 		BFPF done
@@ -248,17 +248,17 @@ loop:
 		// translate
 		VSEQB V8, DECODE_END, V10 // compare 0x2F with input bytes
 		VADDB V9, V10, V10        // add eq_2F with hi_nibbles
-		WORD $0xd55108a           // VSHUFB V10, LUT_ROLL, LUT_ROLL, V10
+		VSHUFB V10, LUT_ROLL, LUT_ROLL, V10
 		VADDB V10, V8, V8         // Now simply add the delta values to the input
 
 		// reshuffle output bytes
 		VMULWEVHBU V8, RESHUFFLE_CONST0, V9
-		WORD $0x70b620a9          // vmaddwod.h.bu V8, RESHUFFLE_CONST0, V9              
+		VMADDWODHBU V8, RESHUFFLE_CONST0, V9
 
 		VMULWEVWHU V9, RESHUFFLE_CONST1, V8
-		WORD $0x70b6a4c8          // vmaddwod.w.hu V9, RESHUFFLE_CONST1, V8
+		VMADDWODWHU V9, RESHUFFLE_CONST1, V8
 
-		WORD $0xd53a108           // VSHUFB RESHUFFLE_MASK, V8, V8, V8
+		VSHUFB RESHUFFLE_MASK, V8, V8, V8
 		VMOVQ V8, (R5)            // store 12 bytes output
 
 		ADDV $12, R5, R5
@@ -294,8 +294,8 @@ stddec_lasx_loop:
 		// validate the input data
 		XVSRLB $4, X8, X9              // high nibble
 		XVANDB $0xf, X8, X10           // low nibble
-		WORD $0x0d64842b               // XVSHUFB X9, X1, X1, X11  (hi nibble lookup)
-		WORD $0x0d65084a               // XVSHUFB X10, X2, X2, X10 (lo nibble lookup)
+		XVSHUFB X9, X1, X1, X11         // hi nibble lookup
+		XVSHUFB X10, X2, X2, X10        // lo nibble lookup
 		XVANDV X11, X10, X10
 		XVSETEQV X10, FCC0
 		BFPF stddec_lasx_done
@@ -303,19 +303,19 @@ stddec_lasx_loop:
 		// translate
 		XVSEQB X8, X3, X10            // compare DECODE_END(0x2F) with input bytes
 		XVADDB X9, X10, X10           // add eq_2F with hi_nibbles
-		WORD $0x0d65108a               // XVSHUFB X10, X4, X4, X10 (lut roll lookup)
+		XVSHUFB X10, X4, X4, X10        // lut roll lookup
 		XVADDB X10, X8, X8            // add delta values to input
 
 		// reshuffle output bytes
 		XVMULWEVHBU X8, X5, X9
-		WORD $0x74b620a9               // xvmaddwod.h.bu X8, X5, X9
+		XVMADDWODHBU X8, X5, X9
 
 		XVMULWEVWHU X9, X6, X8
-		WORD $0x74b6a4c8               // xvmaddwod.w.hu X9, X6, X8
+		XVMADDWODWHU X9, X6, X8
 
-		WORD $0x0d63a108               // XVSHUFB X7, X8, X8, X8  (output reshuffle)
+		XVSHUFB X7, X8, X8, X8          // output reshuffle
 		VMOVQ V8, (R5)                 // store Q0: bytes [0..11] valid, [12..15]=0
-		WORD $0x77ec0509               // xvpermi.q X9, X8, 0x01: X9.Q0 = X8.Q1
+		XVPERMIQ $1, X8, X9             // X9.Q0 = X8.Q1
 		VMOVQ V9, 12(R5)              // store at +12: bytes [12..23] valid, [24..27]=0
 
 		ADDV $24, R5
@@ -357,26 +357,26 @@ loop:
 		// validate the input data
 		VSRLB $4, V8, V9      // high nibble
 		VANDB $0xf, V8, V10   // low nibble
-		WORD $0xd54842b       // VSHUFB V9, LUT_HI, LUT_HI, V11
-		WORD $0xd55084a       // VSHUFB V10, LUT_LO, LUT_LO, V10
+		VSHUFB V9, LUT_HI, LUT_HI, V11
+		VSHUFB V10, LUT_LO, LUT_LO, V10
 		VANDV V11, V10, V10
 		VSETEQV V10, FCC0
 		BFPF done
 
 		// translate
-		WORD $0x7008206a          // compare 0x5E with input bytes: VSLTBU V8, DECODE_END, V10
+		VSLTBU V8, DECODE_END, V10      // compare 0x5E with input bytes
 		VSUBB V10, V9, V10        // sub gt_5E with hi_nibbles
-		WORD $0xd55108a           // VSHUFB V10, LUT_ROLL, LUT_ROLL, V10
+		VSHUFB V10, LUT_ROLL, LUT_ROLL, V10
 		VADDB V10, V8, V8         // Now simply add the delta values to the input
 
 		// reshuffle output bytes
 		VMULWEVHBU V8, RESHUFFLE_CONST0, V9
-		WORD $0x70b620a9          // vmaddwod.h.bu V8, RESHUFFLE_CONST0, V9              
+		VMADDWODHBU V8, RESHUFFLE_CONST0, V9
 
 		VMULWEVWHU V9, RESHUFFLE_CONST1, V8
-		WORD $0x70b6a4c8          // vmaddwod.w.hu V9, RESHUFFLE_CONST1, V8
+		VMADDWODWHU V9, RESHUFFLE_CONST1, V8
 
-		WORD $0xd53a108           // VSHUFB RESHUFFLE_MASK, V8, V8, V8
+		VSHUFB RESHUFFLE_MASK, V8, V8, V8
 		VMOVQ V8, (R5)            // store 12 bytes output
 
 		ADDV $12, R5, R5
@@ -412,28 +412,28 @@ urldec_lasx_loop:
 		// validate the input data
 		XVSRLB $4, X8, X9              // high nibble
 		XVANDB $0xf, X8, X10           // low nibble
-		WORD $0x0d64842b               // XVSHUFB X9, X1, X1, X11  (hi nibble lookup)
-		WORD $0x0d65084a               // XVSHUFB X10, X2, X2, X10 (lo nibble lookup)
+		XVSHUFB X9, X1, X1, X11         // hi nibble lookup
+		XVSHUFB X10, X2, X2, X10        // lo nibble lookup
 		XVANDV X11, X10, X10
 		XVSETEQV X10, FCC0
 		BFPF urldec_lasx_done
 
 		// translate
-		WORD $0x7408206a               // XVSLTBU X8, X3, X10 (compare 0x5E with input)
+		XVSLTBU X8, X3, X10             // compare 0x5E with input
 		XVSUBB X10, X9, X10            // sub gt_5E with hi_nibbles
-		WORD $0x0d65108a               // XVSHUFB X10, X4, X4, X10 (lut roll lookup)
+		XVSHUFB X10, X4, X4, X10        // lut roll lookup
 		XVADDB X10, X8, X8            // add delta values to input
 
 		// reshuffle output bytes
 		XVMULWEVHBU X8, X5, X9
-		WORD $0x74b620a9               // xvmaddwod.h.bu X8, X5, X9
+		XVMADDWODHBU X8, X5, X9
 
 		XVMULWEVWHU X9, X6, X8
-		WORD $0x74b6a4c8               // xvmaddwod.w.hu X9, X6, X8
+		XVMADDWODWHU X9, X6, X8
 
-		WORD $0x0d63a108               // XVSHUFB X7, X8, X8, X8  (output reshuffle)
+		XVSHUFB X7, X8, X8, X8          // output reshuffle
 		VMOVQ V8, (R5)                 // store Q0: bytes [0..11] valid, [12..15]=0
-		WORD $0x77ec0509               // xvpermi.q X9, X8, 0x01: X9.Q0 = X8.Q1
+		XVPERMIQ $1, X8, X9             // X9.Q0 = X8.Q1
 		VMOVQ V9, 12(R5)              // store at +12: bytes [12..23] valid, [24..27]=0
 
 		ADDV $24, R5
