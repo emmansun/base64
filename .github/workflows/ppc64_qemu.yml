@@ -10,6 +10,9 @@ on:
   pull_request:
     branches: [ "main" ]
 
+permissions:
+  contents: read
+
 jobs:
 
   test:
@@ -22,8 +25,13 @@ jobs:
         qemu_cpu: [power8, power9]
     runs-on: ubuntu-latest
     steps:
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+      with:
+        egress-policy: audit
+
     - name: Set up Go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
       with:
         go-version: ${{ matrix.go-version }}
 
@@ -36,7 +44,7 @@ jobs:
         sudo apt-get install -y qemu-user-static
 
     - name: Check out code
-      uses: actions/checkout@v5
+      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
     - name: Test (${{ matrix.qemu_cpu }})
       run: go test -v ./...
